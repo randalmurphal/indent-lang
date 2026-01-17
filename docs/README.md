@@ -21,7 +21,7 @@ Create a language that:
 ## Example
 
 ```
-fn fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
+func fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
     user = db.query_one("SELECT * FROM users WHERE id = ?", id)?
 
     if user.is_active:
@@ -30,7 +30,7 @@ fn fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
     else:
         return NotFound(f"user {id} inactive")
 
-fn process_batch(items: list[Item]) -> list[Result]:
+func process_batch(items: list[Item]) -> list[Result]:
     concurrent:
         results = [spawn process(item) for item in items]
     return results

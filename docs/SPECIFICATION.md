@@ -40,22 +40,24 @@ Block comments are not supported to prevent commented-out code.
 and         as          assert      async       await
 break       case        comptime    concurrent  const
 continue    defer       depends_on  detach      else
-ensure      enum        extern      false       fn
-for         from        if          impl        import
-in          internal    is          let         linear
+ensure      enum        extern      false       for
+from        func        if          implement   import
+in          interface   internal    is          linear
 match       mod         mut         not         or
-pub         region      require     return      self
-spawn       state       static      struct      trait
-true        type        unsafe      with        while
+pub         require     return      scope       self
+spawn       state       static      struct      true
+type        unsafe      val         var         with
+while
 ```
 
 ### 1.6 Reserved Keywords (Future Use)
 
 ```
 abstract    become      box         do          dyn
-final       loop        macro       move        override
-priv        static      super       typeof      unsized
-virtual     where       yield
+final       fn          let         loop        macro
+move        override    priv        region      super
+trait       typeof      unsized     virtual     where
+yield
 ```
 
 ### 1.7 Operators and Punctuation
@@ -165,21 +167,21 @@ string
 #### Tuples
 
 ```
-let point: (int, int) = (10, 20)
-let (x, y) = point  # Destructuring
+val point: (int, int) = (10, 20)
+val (x, y) = point  # Destructuring
 ```
 
 #### Arrays (Fixed Size)
 
 ```
-let arr: [int; 5] = [1, 2, 3, 4, 5]
-let zeros: [int; 100] = [0; 100]  # Fill with 0
+val arr: [int; 5] = [1, 2, 3, 4, 5]
+val zeros: [int; 100] = [0; 100]  # Fill with 0
 ```
 
 #### Slices (Dynamic Size)
 
 ```
-let slice: [int] = arr[1..4]
+val slice: [int] = arr[1..4]
 ```
 
 ### 2.4 Collection Types
@@ -249,7 +251,7 @@ type Result[T] = Result[T, Error]  # Partial application
 struct Container[T]:
     value: T
 
-fn identity[T](x: T) -> T:
+func identity[T](x: T) -> T:
     return x
 ```
 
@@ -260,9 +262,9 @@ fn identity[T](x: T) -> T:
 ### 3.1 Variable Declarations
 
 ```
-let x = 42                    # Immutable, inferred type
-let mut y = 42                # Mutable
-let z: i64 = 42               # Explicit type
+val x = 42                    # Immutable, inferred type
+var y = 42                    # Mutable
+val z: i64 = 42               # Explicit type, immutable
 const MAX: int = 100          # Compile-time constant
 static COUNTER: int = 0       # Static variable
 ```
@@ -270,13 +272,13 @@ static COUNTER: int = 0       # Static variable
 ### 3.2 Function Declarations
 
 ```
-fn add(a: int, b: int) -> int:
+func add(a: int, b: int) -> int:
     return a + b
 
-fn greet(name: str, greeting: str = "Hello") -> str:
+func greet(name: str, greeting: str = "Hello") -> str:
     return f"{greeting}, {name}!"
 
-fn sum(...numbers: int) -> int:
+func sum(...numbers: int) -> int:
     return numbers.reduce((a, b) -> a + b, 0)
 ```
 
@@ -287,34 +289,34 @@ struct Rectangle:
     width: f64
     height: f64
 
-    fn area(self) -> f64:
+    func area(self) -> f64:
         return self.width * self.height
 
-    fn scale(mut self, factor: f64):
+    func scale(var self, factor: f64):
         self.width *= factor
         self.height *= factor
 ```
 
-### 3.4 Trait Declarations
+### 3.4 Interface Declarations
 
 ```
-trait Printable:
-    fn to_string(self) -> String
+interface Printable:
+    func to_string(self) -> String
 
-trait Iterator[T]:
+interface Iterator[T]:
     type Item = T
-    fn next(mut self) -> Option[T]
+    func next(var self) -> Option[T]
 ```
 
-### 3.5 Impl Blocks
+### 3.5 Implement Blocks
 
 ```
-impl Rectangle:
-    fn new(width: f64, height: f64) -> Rectangle:
+implement Rectangle:
+    func new(width: f64, height: f64) -> Rectangle:
         return Rectangle { width, height }
 
-impl Printable for Rectangle:
-    fn to_string(self) -> String:
+implement Printable for Rectangle:
+    func to_string(self) -> String:
         return f"Rectangle({self.width}, {self.height})"
 ```
 
@@ -360,13 +362,13 @@ not a     # Logical NOT
 ### 4.4 Conditional Expressions
 
 ```
-let value = if condition: x else: y
+val value = if condition: x else: y
 ```
 
 ### 4.5 Match Expressions
 
 ```
-let result = match value:
+val result = match value:
     case 0: "zero"
     case n if n < 0: "negative"
     case _: "positive"
@@ -375,10 +377,10 @@ let result = match value:
 ### 4.6 Lambda Expressions
 
 ```
-let double = x -> x * 2
-let add = (a, b) -> a + b
-let complex = x ->
-    let y = process(x)
+val double = x -> x * 2
+val add = (a, b) -> a + b
+val complex = x ->
+    val y = process(x)
     y.finalize()
 ```
 
@@ -398,9 +400,9 @@ user?.address?.city ?? "Unknown"
 ### 4.9 Block Expressions
 
 ```
-let result = {
-    let a = compute()
-    let b = transform(a)
+val result = {
+    val a = compute()
+    val b = transform(a)
     b.finalize()  # Last expression is the value
 }
 ```
@@ -570,13 +572,13 @@ import "./local_module"
 ### 7.3 Visibility
 
 ```
-fn private_function():        # Default: private to module
+func private_function():        # Default: private to module
     pass
 
-internal fn shared_function(): # Visible within package
+internal func shared_function(): # Visible within package
     pass
 
-pub fn public_function():      # Public API
+pub func public_function():      # Public API
     pass
 ```
 
@@ -605,34 +607,34 @@ Values have a single owner. When the owner goes out of scope, the value is dropp
 ### 8.2 Borrowing
 
 ```
-fn read(data: str):       # Immutable borrow (default)
+func read(data: str):       # Immutable borrow (default)
     print(data)
 
-fn modify(data: mut str): # Mutable borrow
+func modify(data: var str): # Mutable borrow
     data.push_str("!")
 ```
 
 ### 8.3 Reference Counting
 
 ```
-let shared: Ref[Data] = Ref.new(Data { ... })
-let clone = shared.clone()  # Increment reference count
+val shared: Ref[Data] = Ref.new(Data { ... })
+val clone = shared.clone()  # Increment reference count
 ```
 
-### 8.4 Regions
+### 8.4 Scopes
 
 ```
-region request:
-    let buffer = allocate(1024)
+scope request:
+    val buffer = allocate(1024)
     process(buffer)
-# All allocations freed at region exit
+# All allocations freed at scope exit
 ```
 
 ### 8.5 Resource Cleanup
 
 ```
-trait Resource:
-    fn close(mut self) -> Result[(), CloseError]
+interface Resource:
+    func close(var self) -> Result[(), CloseError]
 
 with file = File.open("data.txt"):
     file.write("content")
@@ -647,8 +649,8 @@ with file = File.open("data.txt"):
 
 ```
 concurrent:
-    let result1 = spawn fetch_data()
-    let result2 = spawn process_batch()
+    val result1 = spawn fetch_data()
+    val result2 = spawn process_batch()
 # Both tasks complete before continuing
 ```
 
@@ -663,7 +665,7 @@ detach:
 ### 9.3 Channels
 
 ```
-let (tx, rx) = channel[Message]()
+val (tx, rx) = channel[Message]()
 
 spawn:
     tx.send(Message { ... })
@@ -689,7 +691,7 @@ select:
 
 ```
 @blocking
-fn call_c_library(data: bytes) -> bytes:
+func call_c_library(data: bytes) -> bytes:
     return c_lib.process(data)
 ```
 
@@ -700,7 +702,7 @@ fn call_c_library(data: bytes) -> bytes:
 ### 10.1 Result Type
 
 ```
-fn divide(a: int, b: int) -> Result[int, DivError]:
+func divide(a: int, b: int) -> Result[int, DivError]:
     if b == 0:
         return Err(DivError.DivisionByZero)
     return Ok(a / b)
@@ -709,25 +711,25 @@ fn divide(a: int, b: int) -> Result[int, DivError]:
 ### 10.2 Propagation Operator
 
 ```
-fn process() -> Result[Output, Error]:
-    let data = read_file(path)?  # Propagates error
-    let parsed = parse(data)?
+func process() -> Result[Output, Error]:
+    val data = read_file(path)?  # Propagates error
+    val parsed = parse(data)?
     return Ok(transform(parsed))
 ```
 
 ### 10.3 Anonymous Sum Types
 
 ```
-fn load() -> Config | IOError | ParseError:
-    let content = read_file(path)?
+func load() -> Config | IOError | ParseError:
+    val content = read_file(path)?
     return parse(content)?
 ```
 
 ### 10.4 Error Context
 
 ```
-fn process() -> Result[Data, Error]:
-    let file = open(path).context("opening config file")?
+func process() -> Result[Data, Error]:
+    val file = open(path).context("opening config file")?
     return parse(file).context("parsing config")?
 ```
 
@@ -779,7 +781,7 @@ fn debug_only():
 ### 12.1 Preconditions
 
 ```
-fn withdraw(account: Account, amount: Money) -> Result[(), Error]:
+func withdraw(account: Account, amount: Money) -> Result[(), Error]:
     require:
         amount > 0, "amount must be positive"
         amount <= account.balance, "insufficient funds"
@@ -789,7 +791,7 @@ fn withdraw(account: Account, amount: Money) -> Result[(), Error]:
 ### 12.2 Postconditions
 
 ```
-fn deposit(account: Account, amount: Money):
+func deposit(account: Account, amount: Money):
     require:
         amount > 0
     ensure:
@@ -815,8 +817,8 @@ struct BankAccount:
 
 ```
 @test
-fn test_user_creation():
-    let user = User.new("alice")
+func test_user_creation():
+    val user = User.new("alice")
     assert user.name == "alice"
 ```
 
@@ -828,7 +830,7 @@ fn test_user_creation():
     ("valid", "test@example.com", true),
     ("no_at", "invalid", false),
 ])
-fn test_email_validation(name: str, email: str, expected: bool):
+func test_email_validation(name: str, email: str, expected: bool):
     assert validate_email(email) == expected
 ```
 
@@ -836,7 +838,7 @@ fn test_email_validation(name: str, email: str, expected: bool):
 
 ```
 @property_test(iterations: 1000)
-fn test_sort_preserves_length(xs: list[int]):
+func test_sort_preserves_length(xs: list[int]):
     assert len(sort(xs)) == len(xs)
 ```
 
@@ -844,12 +846,12 @@ fn test_sort_preserves_length(xs: list[int]):
 
 ```
 @fixture
-fn test_db() -> TestDatabase:
+func test_db() -> TestDatabase:
     return TestDatabase.new()
 
 @test
-fn test_with_db(db: TestDatabase):
-    let user = db.insert(User.new("test"))
+func test_with_db(db: TestDatabase):
+    val user = db.insert(User.new("test"))
     assert db.find(user.id).is_some()
 ```
 
@@ -895,12 +897,12 @@ fn test_with_db(db: TestDatabase):
 program = { statement } ;
 
 statement = expression_stmt
-          | let_stmt
-          | fn_decl
+          | var_decl
+          | func_decl
           | struct_decl
           | enum_decl
-          | trait_decl
-          | impl_block
+          | interface_decl
+          | implement_block
           | if_stmt
           | match_stmt
           | for_stmt
@@ -908,9 +910,9 @@ statement = expression_stmt
           | return_stmt
           ;
 
-let_stmt = "let" [ "mut" ] IDENT [ ":" type ] "=" expression ;
+var_decl = ( "val" | "var" ) IDENT [ ":" type ] "=" expression ;
 
-fn_decl = [ visibility ] "fn" IDENT [ generics ] "(" [ params ] ")" [ "->" type ] ":" block ;
+func_decl = [ visibility ] "func" IDENT [ generics ] "(" [ params ] ")" [ "->" type ] ":" block ;
 
 struct_decl = [ visibility ] "struct" IDENT [ generics ] ":" INDENT { field_decl } DEDENT ;
 

@@ -80,11 +80,15 @@ lang-design/
 
 ```python
 # Function definition
-fn add(a: int, b: int) -> int:
+func add(a: int, b: int) -> int:
     return a + b
 
+# Variables
+val x = 5          # immutable
+var y = 5          # mutable
+
 # Error handling
-fn fetch(url: str) -> Data | IOError | ParseError:
+func fetch(url: str) -> Data | IOError | ParseError:
     content = http.get(url)?
     return parse(content)?
 
@@ -103,6 +107,14 @@ items.map(x -> x * 2)
 
 # Pipeline
 data |> transform |> filter |> format
+
+# Interface + implementation
+interface Printable:
+    func to_string(self) -> String
+
+implement Printable for User:
+    func to_string(self) -> String:
+        return f"User({self.name})"
 ```
 
 ---
@@ -152,9 +164,10 @@ data |> transform |> filter |> format
 1. **No colored functions** - All functions can suspend; runtime handles it transparently
 2. **Grapheme-first strings** - `len("é")` returns 1, not byte count
 3. **Checked arithmetic** - Integer overflow panics by default; use `+%` for wrapping
-4. **Borrowing default** - Function params borrow immutably unless marked `mut`
+4. **Immutable by default** - Use `val` for immutable, `var` for mutable
 5. **No null** - Use `Option[T]` instead
-6. **Regions not GC** - Memory freed at region exit, not by garbage collector
+6. **Scopes not GC** - Memory freed at scope exit, not by garbage collector
+7. **`pub` for public** - Everything is private by default, use `pub` to export
 
 ---
 

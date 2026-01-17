@@ -89,7 +89,7 @@ The research validates our core vision while sharpening specific technical choic
 | Default semantics | Value types, copy/move by size | Mojo validated this |
 | Function arguments | Borrow by default | Reduces annotation burden 87% |
 | Stored references | Require `Ref<T>` (explicit RC) | Clear ownership boundaries |
-| Regions | Explicit `region { }` blocks | MLKit inference failed |
+| Scopes | Explicit `scope { }` blocks | MLKit inference failed |
 | Lifetimes | Second-class (cannot be stored) | Eliminates annotations entirely |
 | Cycles | Optional `@gc` annotation for types | Backend code rarely has cycles |
 
@@ -168,18 +168,18 @@ From Go's lessons, **enforce these in the language**:
 
 ```
 # Colorless: any function can be used concurrently
-fn fetch(url: str) -> Response:
+func fetch(url: str) -> Response:
     return http.get(url)  # May suspend, caller doesn't know
 
 # Structured: all spawned work completes before scope exits
-fn fetch_all(urls: list[str]) -> list[Response]:
+func fetch_all(urls: list[str]) -> list[Response]:
     concurrent:
         results = [spawn fetch(url) for url in urls]
     return results  # Guaranteed all complete
 
 # FFI blocking: explicit annotation required
 @blocking  # Runs on dedicated thread pool
-fn call_legacy_c_lib(data: bytes) -> bytes:
+func call_legacy_c_lib(data: bytes) -> bytes:
     return c_lib.process(data)
 ```
 
@@ -271,12 +271,12 @@ newtype OrderId(str)
 
 ```
 # Function signature shows error types
-fn load_config(path: str) -> Config | IOError | ParseError:
+func load_config(path: str) -> Config | IOError | ParseError:
     content = read_file(path).context("reading config")?
     return parse_json(content).context("parsing config")?
 
 # Anonymous sum types compose automatically
-fn initialize() -> App | IOError | ParseError | DBError:
+func initialize() -> App | IOError | ParseError | DBError:
     config = load_config("app.json")?  # IOError | ParseError
     db = connect_db(config.db_url)?     # DBError
     return App(config, db)
@@ -324,12 +324,12 @@ match load_config(path):
 | Control flow | Expression-oriented | `x = if cond: a else: b` |
 | String interpolation | `f"value: {x}"` | Python familiarity |
 | Comments | `#` line, no block | One way to comment |
-| Function syntax | `fn name(args) -> Type:` | Explicit, searchable |
+| Function syntax | `func name(args) -> Type:` | Explicit, searchable |
 
 ### Syntax Sample
 
 ```
-fn fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
+func fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
     user = db.query_one("SELECT * FROM users WHERE id = ?", id)?
 
     if user.is_active:
@@ -338,7 +338,7 @@ fn fetch_user(db: Database, id: UserId) -> User | NotFound | DBError:
     else:
         return NotFound(f"user {id} inactive")
 
-fn process_batch(items: list[Item]) -> list[Result]:
+func process_batch(items: list[Item]) -> list[Result]:
     concurrent:
         results = [spawn process(item) for item in items]
     return results
@@ -346,7 +346,7 @@ fn process_batch(items: list[Item]) -> list[Result]:
 
 ### What We Explicitly Reject
 
-- Multiple ways to define functions (no `def`, `func`, `function`)
+- Multiple ways to define functions (no `fn`, `def`, `function`)
 - Block comments (leads to commented-out code)
 - Semicolons (noise)
 - Braces for blocks (indentation is cleaner)
@@ -404,15 +404,15 @@ myapp/
 
 ```
 # Default: private to current module
-fn helper():
+func helper():
     pass
 
 # Visible within project, not to dependents
-internal fn shared_util():
+internal func shared_util():
     pass
 
 # Public API
-pub fn handle_request(req: Request) -> Response:
+pub func handle_request(req: Request) -> Response:
     pass
 ```
 
@@ -443,7 +443,7 @@ Compiler generates optimal code with perfect error messages. No user-facing meta
 
 **Layer 2: Comptime Type Reflection (20% of use cases)**
 ```
-fn serialize[T](value: T, writer: Writer):
+func serialize[T](value: T, writer: Writer):
     comptime for field in type_fields(T):
         writer.write_field(field.name, @field(value, field.name))
 ```
@@ -485,33 +485,33 @@ For schemas, mocks, FFI bindings. Generated files committed, verified in CI.
 ```
 # Zero-overhead: ABI-compatible types
 @ffi("sqlite3.h")
-extern fn sqlite3_open(filename: *const c_char, db: **sqlite3) -> c_int
+extern func sqlite3_open(filename: *const c_char, db: **sqlite3) -> c_int
 
 # Safe wrapper with ownership annotations
 @ffi("mylib.h")
 extern:
     @returns_owned
-    fn create_handle() -> *Handle
+    func create_handle() -> *Handle
 
     @borrows(self)
-    fn get_data(h: *Handle) -> *const c_char
+    func get_data(h: *Handle) -> *const c_char
 
     @consumes(self)
-    fn destroy_handle(h: *Handle)
+    func destroy_handle(h: *Handle)
 ```
 
 ### Python Interop
 
 ```
 # Embed Python with GIL tracking
-fn call_python_ml_model(data: Tensor) -> Tensor:
+func call_python_ml_model(data: Tensor) -> Tensor:
     with python.gil():
         # GIL held, can call Python
         model = python.import("my_model")
         return model.predict(data.to_numpy())
 
 # Release GIL for parallel work
-fn parallel_native_work(items: list[Item]):
+func parallel_native_work(items: list[Item]):
     python.release_gil:
         concurrent:
             [spawn process(item) for item in items]
@@ -537,7 +537,7 @@ fn parallel_native_work(items: list[Item]):
 1. **Compiler-rewritten assert is powerful**: Show actual values, not just "assertion failed"
 2. **pytest fixtures > xUnit setUp**: Dependency injection scales better
 3. **Table-driven tests reduce boilerplate**: Go and Rust patterns
-4. **Result-returning tests enable async**: `fn test_x() -> Result[(), Error]`
+4. **Result-returning tests enable async**: `func test_x() -> Result[(), Error]`
 5. **Same-package test access works**: Go's `_test.go` pattern
 
 ### Test Syntax
@@ -545,7 +545,7 @@ fn parallel_native_work(items: list[Item]):
 ```
 # Basic test with compiler-rewritten assert
 #[test]
-fn test_user_creation():
+func test_user_creation():
     user = User.new("alice", "alice@example.com")
     assert user.name == "alice"  # On failure: "alice" == "bob" (shows values)
     assert user.is_valid()       # On failure: user.is_valid() was false
@@ -556,19 +556,19 @@ fn test_user_creation():
     ("valid", "test@example.com", true),
     ("no_at", "invalid", false),
 )]
-fn test_email_validation(name: str, email: str, expected: bool):
+func test_email_validation(name: str, email: str, expected: bool):
     assert validate_email(email) == expected
 
 # Fixtures via parameter injection
 #[test]
-fn test_with_database(db: TestDatabase):
+func test_with_database(db: TestDatabase):
     # db automatically created, transaction rolled back after
     user = db.insert(User.new("test", "test@test.com"))
     assert db.find_user(user.id).is_some()
 
 # Async/Result-returning tests
 #[test]
-fn test_api_call() -> Result[(), HTTPError]:
+func test_api_call() -> Result[(), HTTPError]:
     response = http.get("https://api.example.com/health")?
     assert response.status == 200
     return Ok(())
@@ -608,7 +608,7 @@ capabilities:
     env: [DATABASE_URL, API_KEY]
 
 # Compiler verifies all capability uses
-fn fetch_data() -> Data:
+func fetch_data() -> Data:
     # Compile error if api.example.com not in allowed hosts
     return http.get("https://api.example.com/data")
 ```
@@ -616,7 +616,7 @@ fn fetch_data() -> Data:
 **Layer 2: Runtime Capability Enforcement**
 ```
 # Runtime verifies dynamic values
-fn read_config(path: str) -> Config:
+func read_config(path: str) -> Config:
     # Runtime check: is path under /config?
     return fs.read(path)
 ```
@@ -624,7 +624,7 @@ fn read_config(path: str) -> Config:
 **Layer 3: OS-Level Sandboxing**
 ```
 # Process-level isolation
-fn run_untrusted(code: str) -> Result[Output, SandboxError]:
+func run_untrusted(code: str) -> Result[Output, SandboxError]:
     sandbox:
         capabilities: none
         timeout: 5s
@@ -636,10 +636,10 @@ fn run_untrusted(code: str) -> Result[Output, SandboxError]:
 
 ```
 # Secret<T> cannot be logged, displayed, or serialized
-fn load_credentials() -> Secret[str]:
+func load_credentials() -> Secret[str]:
     return Secret(env.get("API_KEY"))
 
-fn make_request(key: Secret[str]):
+func make_request(key: Secret[str]):
     log.info(f"using key: {key}")  # Compile error: cannot display Secret
     http.header("Authorization", key.expose())  # Explicit unwrap required
 ```
@@ -843,7 +843,7 @@ service API:
 ### String API
 
 ```
-let s: String = "Hello, 世界! 👨‍👩‍👧‍👦"
+val s: String = "Hello, 世界! 👨‍👩‍👧‍👦"
 
 s.len()           # 4 graphemes (Hello + comma + space + world + ! + space + family)
 s.byte_len()      # Byte count (for allocation)
@@ -879,13 +879,13 @@ f"Value: {x:03d}" # Formatted interpolation
 ### Iterator Protocol
 
 ```
-trait Iterator[T]:
-    fn next(mut self) -> Option[T]
-    fn size_hint() -> (int, Option[int])
+interface Iterator[T]:
+    func next(var self) -> Option[T]
+    func size_hint() -> (int, Option[int])
 
 # Three iteration modes
 for item in collection:           # Borrows
-for mut item in collection.iter_mut():  # Mutable borrow
+for var item in collection.iter_mut():  # Mutable borrow
 for item in collection.into_iter():     # Consumes
 ```
 
@@ -923,7 +923,7 @@ items.map((x: int) -> x.to_string())
 
 # Block form for complex lambdas
 items.map(x ->
-    let processed = transform(x)
+    val processed = transform(x)
     processed.finalize()
 )
 ```
@@ -965,13 +965,13 @@ match value:
 ### Default Arguments & Variadics
 
 ```
-fn greet(name: str, greeting: str = "Hello") -> str:
+func greet(name: str, greeting: str = "Hello") -> str:
     return f"{greeting}, {name}!"
 
-fn sum(...numbers: int) -> int:
+func sum(...numbers: int) -> int:
     return numbers.reduce((a, b) -> a + b, 0)
 
-fn configure(**options: Value):
+func configure(**options: Value):
     for key, value in options:
         set_option(key, value)
 ```
@@ -1099,9 +1099,9 @@ fn configure(**options: Value):
 ### Clock Abstraction (for testing)
 
 ```
-trait Clock:
-    fn now() -> Instant
-    fn zone() -> TimeZone
+interface Clock:
+    func now() -> Instant
+    func zone() -> TimeZone
 
 # Implementations
 SystemClock       # Production
@@ -1109,7 +1109,7 @@ FixedClock        # Testing: frozen time
 SimulatedClock    # Testing: controllable advancement
 
 # Testable code
-fn is_overdue(deadline: Instant, clock: Clock = SystemClock) -> bool:
+func is_overdue(deadline: Instant, clock: Clock = SystemClock) -> bool:
     Instant.now(clock).is_after(deadline)
 ```
 
@@ -1137,9 +1137,9 @@ fn is_overdue(deadline: Instant, clock: Clock = SystemClock) -> bool:
 ### SIMD Support
 
 ```
-let a: Vector(4, f32) = [1.0, 2.0, 3.0, 4.0]
-let b: Vector(4, f32) = [5.0, 6.0, 7.0, 8.0]
-let c = a + b  # Element-wise addition
+val a: Vector(4, f32) = [1.0, 2.0, 3.0, 4.0]
+val b: Vector(4, f32) = [5.0, 6.0, 7.0, 8.0]
+val c = a + b  # Element-wise addition
 
 # Built-in operations
 splat(value)      # Broadcast to all lanes
@@ -1162,28 +1162,28 @@ shuffle(a, b, mask)  # Permute elements
 ### Resource Traits
 
 ```
-trait Resource:
-    fn close(mut self) -> Result[(), CloseError]
+interface Resource:
+    func close(var self) -> Result[(), CloseError]
 
-trait AsyncResource: Resource:
-    async fn async_close(mut self) -> Result[(), CloseError]
+interface AsyncResource: Resource:
+    async func async_close(var self) -> Result[(), CloseError]
 ```
 
 ### Region-Scoped Cleanup
 
 ```
-region request:
-    let conn = db_pool.get()      # Cleaned up third
-    let file = File.open("log")   # Cleaned up second
-    let lock = mutex.lock()       # Cleaned up first
-# Region exit triggers cleanup cascade in reverse order
+scope request:
+    val conn = db_pool.get()      # Cleaned up third
+    val file = File.open("log")   # Cleaned up second
+    val lock = mutex.lock()       # Cleaned up first
+# Scope exit triggers cleanup cascade in reverse order
 ```
 
 ### Explicit Dependency Ordering
 
 ```
-let pool = ConnectionPool.new()
-let conn = pool.get() depends_on pool  # Compiler ensures conn closes before pool
+val pool = ConnectionPool.new()
+val conn = pool.get() depends_on pool  # Compiler ensures conn closes before pool
 ```
 
 ### Connection Pooling
@@ -1191,9 +1191,9 @@ let conn = pool.get() depends_on pool  # Compiler ensures conn closes before poo
 ```
 # Built-in pool semantics
 struct Pool[T: Resource]:
-    fn get() -> PoolGuard[T]
-    async fn async_get() -> PoolGuard[T]
-    fn shutdown(timeout: Duration)
+    func get() -> PoolGuard[T]
+    async func async_get() -> PoolGuard[T]
+    func shutdown(timeout: Duration)
 
 # Pool returns to pool, not closed
 with conn = pool.get():
@@ -1217,7 +1217,7 @@ with conn = pool.get():
 
 ```
 @trace(level: Info, fields: {user_id: ctx.user_id})
-fn process_order(ctx: Context, order: Order) -> Result[Receipt, OrderError]:
+func process_order(ctx: Context, order: Order) -> Result[Receipt, OrderError]:
     # Compiler injects span lifecycle, argument recording, error capture
     validate_order(order)?
     charge_payment(ctx, order.total)?
@@ -1233,7 +1233,7 @@ struct HttpLabels:
     status: StatusClass    # Enum: 2xx, 3xx, 4xx, 5xx
     path: str
 
-let requests = Counter[HttpLabels].new(
+val requests = Counter[HttpLabels].new(
     name: "http_requests_total",
     help: "Total HTTP requests"
 )
@@ -1266,14 +1266,14 @@ requests.with(HttpLabels { method: GET, status: Success2xx, path: "/api" }).inc(
 error[E0308]: type mismatch
   --> src/main.idt:15:12
    |
-15 |     let x: int = "hello"
+15 |     val x: int = "hello"
    |            ---   ^^^^^^^ expected int, found str
    |            |
    |            expected due to this type annotation
    |
 help: consider using parse
    |
-15 |     let x: int = "hello".parse()?
+15 |     val x: int = "hello".parse()?
    |                         ++++++++
 ```
 
@@ -1333,7 +1333,7 @@ indent dev --watch
 ### Contracts
 
 ```
-fn deposit(account: Account, amount: Money) -> None:
+func deposit(account: Account, amount: Money) -> None:
     require:
         amount >= 0, "amount must be non-negative"
         account.is_open, "account must be open"
@@ -1347,11 +1347,11 @@ fn deposit(account: Account, amount: Money) -> None:
 
 ```
 @property_test(iterations: 1000)
-fn test_sort_preserves_length(xs: list[int]):
+func test_sort_preserves_length(xs: list[int]):
     assert len(sort(xs)) == len(xs)
 
 @property_test
-fn test_json_roundtrip(data: Json from json_generator()):
+func test_json_roundtrip(data: Json from json_generator()):
     assert Json.parse(data.to_string()) == data
 ```
 
@@ -1363,18 +1363,18 @@ state Connection:
     Connected { socket: Socket }
     Closed
 
-impl Connection[Disconnected]:
-    fn connect(self, addr: Address) -> Connection[Connected]:
+implement Connection[Disconnected]:
+    func connect(self, addr: Address) -> Connection[Connected]:
         ...
 
-impl Connection[Connected]:
-    fn send(self, data: bytes) -> None:
+implement Connection[Connected]:
+    func send(self, data: bytes) -> None:
         ...
-    fn close(self) -> Connection[Closed]:
+    func close(self) -> Connection[Closed]:
         ...
 
 # Compile error: send() not available on Disconnected
-let conn = Connection.Disconnected()
+val conn = Connection.Disconnected()
 conn.send(b"hello")  # Error!
 ```
 
@@ -1414,7 +1414,7 @@ conn.send(b"hello")  # Error!
 ### Capability Types
 
 ```
-fn read_config(path: Path) -> Config requires fs:read(path.parent):
+func read_config(path: Path) -> Config requires fs:read(path.parent):
     file = open(path)?
     return parse(file.read_all()?)
 
@@ -1496,7 +1496,7 @@ All high-priority questions have been resolved. See "Resolved" section below.
 |----------|------------|
 | Language name | **Indent** with `.idt` extension |
 | Syntax style | Python-like: significant whitespace, 4 spaces, `and`/`or`/`not` |
-| Region syntax | `region { }` blocks with explicit scope |
+| Scope syntax | `scope { }` blocks for memory scopes |
 | Concurrency syntax | `concurrent { }` for structured, `spawn` for tasks |
 | Standard library async | Colorless - runtime handles suspension transparently |
 | Testing framework | Built-in with `#[test]`, compiler-rewritten assert |
