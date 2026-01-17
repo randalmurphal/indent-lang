@@ -108,7 +108,10 @@ indent                    # Single binary
 
 ## Documentation
 
-- [SYNTHESIS.md](./SYNTHESIS.md) - Complete design synthesis from 15 research investigations
+| Document | Purpose |
+|----------|---------|
+| [SYNTHESIS.md](./SYNTHESIS.md) | Complete design synthesis from 37 research papers |
+| [SPECIFICATION.md](./SPECIFICATION.md) | Formal language grammar, types, and semantics |
 
 ## Success Criteria
 
@@ -124,5 +127,5 @@ A minimal viable language would:
 
 ---
 
-*Last updated: 2025-01-17*
-*Status: Design complete, ready for prototype*
+*Last updated: 2026-01-17*
+*Status: Design complete (37 research papers), ready for prototype*

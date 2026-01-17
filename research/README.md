@@ -74,4 +74,4 @@ Non-obvious research areas that affect language success.
 
 ## Total: 37 Research Papers
 
-All findings are synthesized in [docs/00-overview/SYNTHESIS.md](../docs/00-overview/SYNTHESIS.md).
+All findings are synthesized in [docs/SYNTHESIS.md](../docs/SYNTHESIS.md).
