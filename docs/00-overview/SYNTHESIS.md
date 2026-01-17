@@ -1,11 +1,11 @@
 # Indent Language Design Decisions
 
-**Date**: 2025-01-17
-**Status**: Complete - 15 research investigations synthesized, ready for prototype
+**Date**: 2026-01-17
+**Status**: Complete - 37 research investigations synthesized, ready for prototype
 **Language Name**: Indent
 **File Extension**: `.idt`
 
-This document synthesizes findings from 15 deep research investigations into a coherent design for the Indent programming language.
+This document synthesizes findings from 37 deep research investigations across four rounds into a coherent design for the Indent programming language.
 
 ---
 
@@ -30,6 +30,18 @@ The research validates our core vision while sharpening specific technical choic
 | Stdlib | Targeted batteries | **Refined** - specific module priorities identified | High |
 | Tooling | Single binary | **Validated** - Go model + Salsa-based LSP | High |
 | Cloud-native | Built-in patterns | **Expanded** - more should be language primitives | High |
+| Strings | UTF-8 + graphemes | **Validated** - grapheme-first len(), no integer indexing | High |
+| Collections | Iterator protocol | **Validated** - Option-based, Swiss Tables, comprehensions | High |
+| Async Runtime | Stackful coroutines | **Validated** - work-stealing, io_uring, 2KB stacks | High |
+| Serialization | serde-style | **Validated** - format-agnostic, derive-based | High |
+| Time/Date | java.time model | **Validated** - separate Instant/LocalDateTime, explicit TZ | High |
+| Numerics | Checked by default | **Validated** - explicit wrapping ops, first-class SIMD | High |
+| Observability | Built-in tracing | **Validated** - <2% overhead, compile-time elimination | High |
+| Hot Reload | Late binding default | **Validated** - BEAM-style two-version coexistence | Medium |
+| Formal Methods | Contracts + PBT | **Validated** - require/ensure blocks, property testing | High |
+| Embedding | Three-tier plugins | **Validated** - Native/WASM/gRPC for different trust levels | High |
+| Error Messages | Rust-style | **Validated** - source location, suggestions, color | High |
+| Resource Mgmt | Explicit cleanup | **Validated** - Resource trait, depends_on ordering | High |
 
 **Key insight**: The research reveals we can achieve more than originally hoped. Every major design decision has been validated by real-world implementations. The "one obvious way" philosophy is achievable across all language features.
 
@@ -805,23 +817,678 @@ service API:
 
 ---
 
+## Strings & Unicode: Final Design
+
+### Research Findings
+
+1. **UTF-8 wins universally** - All modern languages (Rust, Go, Swift) use UTF-8 internally
+2. **Grapheme clusters are what users expect** - `len("é")` should be 1, not 2
+3. **Integer indexing is harmful** - O(n) for UTF-8, encourages bugs
+4. **Owned vs borrowed is essential** - `String` (heap) vs `str` (view)
+5. **Linear-time regex prevents ReDoS** - RE2 semantics for safety
+
+### Specific Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Internal encoding | UTF-8 always | Memory efficiency, web compatibility |
+| `len()` semantics | Grapheme cluster count | Matches user intuition |
+| Indexing | Iterator-based only | Forbid `s[i]`, use `s.chars()`, `s.graphemes()` |
+| String types | `String` (owned) + `str` (borrowed) | Clear ownership |
+| Interpolation | `f"Hello {name}"` | Python familiarity |
+| Regex engine | RE2 semantics (linear time) | ReDoS prevention |
+| Normalization | Explicit `.normalize(NFC)` | No silent changes |
+| Case operations | Locale-aware `.to_upper(locale)` | Turkish i problem |
+
+### String API
+
+```
+let s: String = "Hello, 世界! 👨‍👩‍👧‍👦"
+
+s.len()           # 4 graphemes (Hello + comma + space + world + ! + space + family)
+s.byte_len()      # Byte count (for allocation)
+s.chars()         # Iterator over Unicode scalars
+s.graphemes()     # Iterator over grapheme clusters
+s.lines()         # Iterator over lines
+s.split(sep)      # Split by separator
+f"Value: {x:03d}" # Formatted interpolation
+```
+
+---
+
+## Collections & Iterators: Final Design
+
+### Research Findings
+
+1. **Option-based iteration beats exceptions** - `next() -> Option[T]` vs StopIteration
+2. **Lazy adapters compile to tight loops** - Rust iterators match hand-written code
+3. **Swiss Tables are fastest** - Google's hashmap: 2-3x faster than std::unordered_map
+4. **1.5x growth factor is optimal** - Better cache behavior than 2x
+5. **Comprehensions + methods both valuable** - Don't force choice
+
+### Core Collection Types
+
+| Type | Implementation | Notes |
+|------|----------------|-------|
+| `List[T]` | Dynamic array, 1.5x growth | Small-buffer optimization |
+| `Dict[K, V]` | Swiss Table (flat, SIMD probing) | Insertion-ordered by default |
+| `Set[T]` | Swiss Table variant | Hash-based |
+| `Deque[T]` | Ring buffer | O(1) both ends |
+| `Sorted[T]` | B-tree | Ordered iteration |
+
+### Iterator Protocol
+
+```
+trait Iterator[T]:
+    fn next(mut self) -> Option[T]
+    fn size_hint() -> (int, Option[int])
+
+# Three iteration modes
+for item in collection:           # Borrows
+for mut item in collection.iter_mut():  # Mutable borrow
+for item in collection.into_iter():     # Consumes
+```
+
+### Comprehension Syntax
+
+```
+# List comprehension (eager, allocates)
+squares = [x * x for x in range(10)]
+
+# Generator expression (lazy)
+squares = (x * x for x in range(10))
+
+# Dict comprehension
+lookup = {item.id: item for item in items}
+
+# With filter
+evens = [x for x in nums if x % 2 == 0]
+```
+
+---
+
+## Extended Syntax: Final Design
+
+### Lambda Syntax
+
+```
+# Short form
+items.map(x -> x * 2)
+
+# Multi-parameter
+items.reduce((a, b) -> a + b)
+
+# With type annotation
+items.map((x: int) -> x.to_string())
+
+# Block form for complex lambdas
+items.map(x ->
+    let processed = transform(x)
+    processed.finalize()
+)
+```
+
+### Pattern Matching
+
+```
+match value:
+    case 0:
+        "zero"
+    case n if n < 0:
+        "negative"
+    case Point(x, 0):
+        f"on x-axis at {x}"
+    case Point(x, y) as p if x == y:
+        f"diagonal point {p}"
+    case [first, ...rest]:
+        f"list starting with {first}"
+    case {"key": value}:
+        f"dict with key={value}"
+    case _:
+        "anything else"
+```
+
+### Operators
+
+| Operator | Meaning | Example |
+|----------|---------|---------|
+| `\|>` | Pipeline | `data \|> transform \|> format` |
+| `??` | Null coalesce | `x ?? default` |
+| `?.` | Optional chain | `user?.address?.city` |
+| `//` | Integer division | `7 // 3 == 2` |
+| `**` | Exponentiation | `2 ** 10 == 1024` |
+| `in` | Containment | `x in collection` |
+| `not in` | Negated containment | `x not in collection` |
+| `is` | Identity | `a is b` |
+| `is not` | Negated identity | `a is not b` |
+
+### Default Arguments & Variadics
+
+```
+fn greet(name: str, greeting: str = "Hello") -> str:
+    return f"{greeting}, {name}!"
+
+fn sum(...numbers: int) -> int:
+    return numbers.reduce((a, b) -> a + b, 0)
+
+fn configure(**options: Value):
+    for key, value in options:
+        set_option(key, value)
+```
+
+---
+
+## Async Runtime Architecture: Final Design
+
+### Research Findings
+
+1. **Stackful coroutines enable colorless async** - No function coloring
+2. **Work-stealing is optimal for CPU-bound** - Tokio, Go, Rayon all use it
+3. **io_uring is 40% faster than epoll** - But needs fallback for older kernels
+4. **2KB stacks are sufficient** - Growable to 1GB when needed
+5. **SIGURG enables safe preemption** - Go 1.14+ approach
+
+### Runtime Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User Code                                 │
+│  • Colorless: all functions can suspend                     │
+│  • @blocking marks C FFI that may block                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Scheduler                                 │
+│  • Work-stealing with per-processor queues                  │
+│  • LIFO slot for hot task cache                             │
+│  • Hierarchical timing wheels for timers                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    I/O Backend                               │
+│  • io_uring primary (Linux 5.1+)                            │
+│  • epoll fallback (older Linux)                             │
+│  • kqueue (macOS/BSD)                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Specific Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Coroutine model | Stackful, 2KB initial | Colorless async |
+| Stack growth | Segmented, up to 1GB | Handle deep recursion |
+| Scheduler | Work-stealing, N:M | Best for mixed workloads |
+| I/O primary | io_uring | 40% faster than epoll |
+| Timer implementation | Hierarchical timing wheels | O(1) insertion |
+| Preemption | SIGURG-based (Go style) | Safe points at function entry |
+| Blocking FFI | `@blocking` annotation | Dedicated thread pool |
+
+---
+
+## Serialization: Final Design
+
+### Research Findings
+
+1. **Serde's format-agnostic design is superior** - Separate type from format
+2. **JSON + MessagePack cover 90% of needs** - Built-in, no schema required
+3. **Protocol Buffers for gRPC** - Optional support for strict schemas
+4. **Zero-copy is specialized** - FlatBuffers/rkyv for memory-mapped files
+5. **Security limits are non-negotiable** - Max depth, size, string length
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    User Types                                │
+│  @derive(Serialize, Deserialize)                            │
+│  struct User { id: int, name: str, email: str }            │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Data Model                                │
+│  ~25 types: primitives, strings, sequences, maps, etc.     │
+│  Format-independent representation                          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Format Implementations                    │
+│  JSON, MessagePack (built-in)                               │
+│  Protobuf, CBOR, TOML (optional)                            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Security Defaults
+
+| Parameter | Default | Rationale |
+|-----------|---------|-----------|
+| Max depth | 64 | Prevent stack overflow |
+| Max string | 20 MB | Prevent allocation bombs |
+| Max payload | 10 MB | Match gRPC default |
+| Max array elements | 100,000 | Application-dependent |
+
+---
+
+## Time & Date: Final Design
+
+### Research Findings
+
+1. **Machine time ≠ human time** - Instant vs LocalDateTime must be separate
+2. **Duration ≠ Period** - 24 hours ≠ "1 day" during DST
+3. **java.time is the gold standard** - Adopt its type hierarchy
+4. **Explicit timezone required** - Converting local→instant needs zone
+5. **DST gaps/overlaps need explicit resolution** - No silent defaults
+
+### Type Hierarchy
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| `Instant` | UTC nanoseconds since epoch | Timestamps, logging |
+| `LocalDate` | Calendar date, no timezone | Birthdays |
+| `LocalTime` | Wall-clock time, no date | "9:00 AM" |
+| `LocalDateTime` | Date + time, no timezone | Recurring events |
+| `ZonedDateTime` | Full datetime with timezone | Meeting scheduling |
+| `Duration` | Seconds + nanoseconds | Elapsed time |
+| `Period` | Years + months + days | Calendar intervals |
+| `TimeZone` | IANA identifier | "America/New_York" |
+
+### Clock Abstraction (for testing)
+
+```
+trait Clock:
+    fn now() -> Instant
+    fn zone() -> TimeZone
+
+# Implementations
+SystemClock       # Production
+FixedClock        # Testing: frozen time
+SimulatedClock    # Testing: controllable advancement
+
+# Testable code
+fn is_overdue(deadline: Instant, clock: Clock = SystemClock) -> bool:
+    Instant.now(clock).is_after(deadline)
+```
+
+---
+
+## Numeric Computing: Final Design
+
+### Research Findings
+
+1. **Checked arithmetic by default** - Catches bugs, CVE prevention
+2. **IEEE 754 strict by default** - SSE2 minimum, per-function fast-math opt-in
+3. **First-class SIMD vectors** - Zig-style `Vector(N, T)` with operators
+4. **Explicit conversions only** - No silent truncation
+5. **Decimal types for money** - Binary floats can't represent 0.1 exactly
+
+### Overflow Handling
+
+| Operation | Syntax | Behavior |
+|-----------|--------|----------|
+| Default | `a + b` | Checked (panic on overflow) |
+| Wrapping | `a +% b` | Two's complement modular |
+| Saturating | `a +\| b` | Clamps to MIN/MAX |
+| Checked | `a.checked_add(b)` | Returns `Option[T]` |
+
+### SIMD Support
+
+```
+let a: Vector(4, f32) = [1.0, 2.0, 3.0, 4.0]
+let b: Vector(4, f32) = [5.0, 6.0, 7.0, 8.0]
+let c = a + b  # Element-wise addition
+
+# Built-in operations
+splat(value)      # Broadcast to all lanes
+reduce(op, vec)   # Horizontal operation
+shuffle(a, b, mask)  # Permute elements
+```
+
+---
+
+## Resource Management: Final Design
+
+### Research Findings
+
+1. **Close should return Result** - Unlike Rust's Drop, cleanup can fail
+2. **Async cleanup needs explicit support** - Separate AsyncResource trait
+3. **Cleanup order matters** - Reverse allocation order, explicit dependencies
+4. **Pool patterns are common** - Language support for connection pooling
+5. **Leak detection enables debugging** - Runtime tracking with stack traces
+
+### Resource Traits
+
+```
+trait Resource:
+    fn close(mut self) -> Result[(), CloseError]
+
+trait AsyncResource: Resource:
+    async fn async_close(mut self) -> Result[(), CloseError]
+```
+
+### Region-Scoped Cleanup
+
+```
+region request:
+    let conn = db_pool.get()      # Cleaned up third
+    let file = File.open("log")   # Cleaned up second
+    let lock = mutex.lock()       # Cleaned up first
+# Region exit triggers cleanup cascade in reverse order
+```
+
+### Explicit Dependency Ordering
+
+```
+let pool = ConnectionPool.new()
+let conn = pool.get() depends_on pool  # Compiler ensures conn closes before pool
+```
+
+### Connection Pooling
+
+```
+# Built-in pool semantics
+struct Pool[T: Resource]:
+    fn get() -> PoolGuard[T]
+    async fn async_get() -> PoolGuard[T]
+    fn shutdown(timeout: Duration)
+
+# Pool returns to pool, not closed
+with conn = pool.get():
+    conn.query(...)
+# conn returns to pool here
+```
+
+---
+
+## Observability: Final Design
+
+### Research Findings
+
+1. **Compiler injection eliminates boilerplate** - Automatic span creation
+2. **Structured logging is 60x faster** - Parameterized vs string interpolation
+3. **W3C Trace Context is standard** - Use for cross-service propagation
+4. **<2% overhead is achievable** - Compile-time elimination when disabled
+5. **Type-safe metrics prevent cardinality explosion** - Enum labels
+
+### Automatic Tracing
+
+```
+@trace(level: Info, fields: {user_id: ctx.user_id})
+fn process_order(ctx: Context, order: Order) -> Result[Receipt, OrderError]:
+    # Compiler injects span lifecycle, argument recording, error capture
+    validate_order(order)?
+    charge_payment(ctx, order.total)?
+    Ok(generate_receipt(order))
+```
+
+### Type-Safe Metrics
+
+```
+@derive(LabelSet)
+struct HttpLabels:
+    method: HttpMethod     # Enum: GET, POST, PUT, DELETE
+    status: StatusClass    # Enum: 2xx, 3xx, 4xx, 5xx
+    path: str
+
+let requests = Counter[HttpLabels].new(
+    name: "http_requests_total",
+    help: "Total HTTP requests"
+)
+
+requests.with(HttpLabels { method: GET, status: Success2xx, path: "/api" }).inc()
+```
+
+### Zero-Cost When Disabled
+
+```
+# Build with: indent build --max-log-level=info
+# Result: all trace!() and debug!() calls removed from binary entirely
+```
+
+---
+
+## Error Messages: Final Design
+
+### Research Findings
+
+1. **Source location + code snippet essential** - Point to exact problem
+2. **Suggestions dramatically help** - "Did you mean X?"
+3. **Error codes enable documentation** - `E0001`, `indent explain E0001`
+4. **Colors improve scanning** - But support `--no-color`
+5. **Progressive disclosure** - Main message first, details available
+
+### Error Format
+
+```
+error[E0308]: type mismatch
+  --> src/main.idt:15:12
+   |
+15 |     let x: int = "hello"
+   |            ---   ^^^^^^^ expected int, found str
+   |            |
+   |            expected due to this type annotation
+   |
+help: consider using parse
+   |
+15 |     let x: int = "hello".parse()?
+   |                         ++++++++
+```
+
+### Error Code System
+
+| Range | Category |
+|-------|----------|
+| E0000-E0099 | Syntax errors |
+| E0100-E0199 | Type errors |
+| E0200-E0299 | Lifetime/borrow errors |
+| E0300-E0399 | Pattern matching |
+| E0400-E0499 | Module system |
+| W0000-W0099 | Warnings |
+
+---
+
+## Hot Reload: Final Design
+
+### Research Findings
+
+1. **Late binding is non-negotiable** - Function calls via runtime registry
+2. **State and behavior must be separable** - Explicit reload-stable state
+3. **Two-version limit is a feature** - Forces migration completion
+4. **Closures are the hardest problem** - Document stale reference behavior
+5. **Actor model provides best foundation** - Process isolation + message passing
+
+### Phase 1 (v1.0) Foundation
+
+- Late-bound function calls through runtime registry
+- Two-version module coexistence (current/old)
+- `@stable` annotation for reload-surviving state
+- Module lifecycle hooks: `before_reload`, `after_reload`
+- State migration callback: `migrate_state(old_state, old_version) -> new_state`
+
+### Development Experience
+
+```
+# File watcher with dependency analysis
+indent dev --watch
+
+# Validation before load - reject code with errors, keep old version
+# Error overlay without breaking application state
+```
+
+---
+
+## Formal Methods: Final Design
+
+### Research Findings
+
+1. **Contracts have 30 years of proven value** - Eiffel's Design by Contract
+2. **Property-based testing succeeds where others fail** - Highest adoption
+3. **Refinement types are premature** - SMT solver complexity, poor errors
+4. **Typestate provides zero-cost safety** - Compile-time state tracking
+5. **Built-in fuzzing catches 13,000+ bugs** - OSS-Fuzz demonstrates value
+
+### Contracts
+
+```
+fn deposit(account: Account, amount: Money) -> None:
+    require:
+        amount >= 0, "amount must be non-negative"
+        account.is_open, "account must be open"
+    ensure:
+        account.balance == old(account.balance) + amount
+
+    account._balance += amount
+```
+
+### Property-Based Testing
+
+```
+@property_test(iterations: 1000)
+fn test_sort_preserves_length(xs: list[int]):
+    assert len(sort(xs)) == len(xs)
+
+@property_test
+fn test_json_roundtrip(data: Json from json_generator()):
+    assert Json.parse(data.to_string()) == data
+```
+
+### Typestate for Resources
+
+```
+state Connection:
+    Disconnected
+    Connected { socket: Socket }
+    Closed
+
+impl Connection[Disconnected]:
+    fn connect(self, addr: Address) -> Connection[Connected]:
+        ...
+
+impl Connection[Connected]:
+    fn send(self, data: bytes) -> None:
+        ...
+    fn close(self) -> Connection[Closed]:
+        ...
+
+# Compile error: send() not available on Disconnected
+let conn = Connection.Disconnected()
+conn.send(b"hello")  # Error!
+```
+
+### Priority
+
+| Priority | Feature |
+|----------|---------|
+| P0 | Runtime contracts (require/ensure) |
+| P0 | Property-based testing |
+| P0 | Null safety (Option types) |
+| P1 | Built-in fuzzing |
+| P1 | Class/struct invariants |
+| P1 | Typestate for resources |
+| P2 | Loop invariants |
+| Future | Refinement types |
+
+---
+
+## Embedding & Plugins: Final Design
+
+### Research Findings
+
+1. **Region model is embedding advantage** - Predictable, no GC pauses
+2. **Three tiers serve different needs** - Native/WASM/gRPC
+3. **Capability types enable sandboxing** - Built into type system
+4. **<500KB binary, <10ms startup achievable** - Match Lua's embeddability
+5. **Config mode competes with CUE/Dhall** - Termination checking, hash imports
+
+### Three-Tier Plugin Architecture
+
+| Tier | Mechanism | Trust Level | Use Case |
+|------|-----------|-------------|----------|
+| 1 | Native C ABI | Full trust | Database drivers, performance-critical |
+| 2 | WASM sandbox | Untrusted | User scripts, marketplace plugins |
+| 3 | gRPC subprocess | Isolated | Cloud integrations, crash-tolerant |
+
+### Capability Types
+
+```
+fn read_config(path: Path) -> Config requires fs:read(path.parent):
+    file = open(path)?
+    return parse(file.read_all()?)
+
+# Compile-time verification of capability requirements
+```
+
+### Embedding API
+
+```c
+// Handle-based with arena support
+indent_arena_t* arena = indent_arena_new(ctx, 64 * 1024);
+indent_value_t result = indent_call(ctx, func, args);
+indent_arena_free(arena);  // Single deallocation
+```
+
+---
+
+## Production Failure Prevention: Final Design
+
+### Research Findings
+
+1. **70% of severe bugs are memory safety** - Google, Microsoft data
+2. **Unbounded queues cause cascading failures** - Every queue needs max size
+3. **Missing timeouts cause resource exhaustion** - Infinite is never safe default
+4. **Container awareness is mandatory** - Read cgroup limits, not host
+5. **Compile-time prevention >> runtime detection** - Go race detector misses most
+
+### Compile-Time Prevention (Highest Priority)
+
+- Ownership system for memory safety and deterministic cleanup
+- Non-nullable types by default with explicit `Option[T]`
+- `Result[T, E]` with must_use - compiler-enforced error handling
+- Send/Sync traits for compile-time thread safety
+- Bounded channels and collections by default
+
+### Runtime Defaults
+
+| Behavior | Default | Rationale |
+|----------|---------|-----------|
+| Container awareness | Auto-detect cgroup limits | Configure GC/threads correctly |
+| SIGTERM handling | 15-second drain | Graceful shutdown |
+| HTTP timeout | 30 seconds | Never infinite |
+| Health endpoints | Auto `/healthz`, `/readyz` | Kubernetes compatibility |
+| OOM handling | Heap dump on OOM | Post-mortem debugging |
+
+### Patterns to Make Hard
+
+```
+# These require explicit annotation:
+@unbounded  # Unbounded queue/collection
+@no_timeout # Missing network timeout
+@fire_and_forget  # Untracked background work
+@ignore_error  # Discarding error result
+```
+
+---
+
 ## Remaining Open Questions
 
 ### High Priority (Decide Before Prototype)
 
-1. **Mutable vs immutable default** - Python-like (mutable) or functional (immutable)?
+All high-priority questions have been resolved. See "Resolved" section below.
 
 ### Medium Priority (Decide During Prototype)
-
-1. **Associated types in traits** - Powerful but complex
-2. **Method call syntax** - `obj.method()` only or also UFCS?
-3. **Operator overloading** - Allow or forbid?
-
-### Low Priority (Decide Later)
 
 1. **Package registry** - When community needs one (URL-based imports work initially)
 2. **IDE plugins beyond VS Code** - Community can help
 3. **Windows support** - Linux/macOS first
+
+### Low Priority (Decide Later)
+
+1. **Custom allocators** - API design for custom memory allocation
+2. **Async generators** - Syntax for async iteration
+3. **Effect system** - Beyond Result, for cancellation/context
 
 ### Resolved
 
@@ -835,6 +1502,22 @@ service API:
 | Testing framework | Built-in with `#[test]`, compiler-rewritten assert |
 | Security model | Three-layer: compile-time caps, runtime enforcement, OS sandbox |
 | Metaprogramming | Built-in derives + comptime reflection, NO AST macros |
+| Lambda syntax | `x -> expr` with optional parens for multiple params |
+| String semantics | UTF-8 internal, grapheme-first `len()`, no integer indexing |
+| Iterator protocol | Option-based `next()`, three modes (borrow, mut borrow, consume) |
+| Comprehensions | Python-style `[x for x in xs if cond]` alongside method chains |
+| Integer overflow | Checked by default, explicit wrapping/saturating operators |
+| Time types | java.time model with Instant/LocalDateTime separation |
+| Serialization | serde-style format-agnostic with Serialize/Deserialize derives |
+| Observability | Built-in tracing with `@trace` attribute, <2% overhead |
+| Resource cleanup | Resource trait with Result-returning `close()` |
+| Formal methods | Contracts (require/ensure) + property-based testing |
+| Hot reload | Late binding by default, two-version module coexistence |
+| Error messages | Rust-style with source snippets, suggestions, error codes |
+| Mutable vs immutable | Mutable by default (like Python/Go), but function params borrow immutably |
+| Associated types | Supported with simple syntax: `type Item` in trait definitions |
+| Method call syntax | `obj.method()` only, no UFCS ("one obvious way") |
+| Operator overloading | Limited: standard operators via traits (Add, Sub, etc.), no custom operators |
 
 ---
 
@@ -880,6 +1563,12 @@ service API:
 | Bidirectional type inference | Very High | Low - well-proven approach |
 | Python-like syntax | Very High | Low - cognitive research validates |
 | Go's MVS for packages | Very High | Low - proven at scale |
+| UTF-8 strings + grapheme len() | Very High | Low - modern consensus |
+| Option-based iterators | Very High | Low - Rust proves superiority |
+| Checked integer arithmetic | Very High | Low - catches real CVEs |
+| java.time model for dates | Very High | Low - industry gold standard |
+| Serde-style serialization | Very High | Low - proven at scale |
+| Rust-style error messages | Very High | Low - universally praised |
 | Structured concurrency | High | Medium - may need escape hatches |
 | RC with 95% elimination | High | Medium - needs prototype validation |
 | No colored functions | High | Low - Go proves it works |
@@ -888,8 +1577,15 @@ service API:
 | Three-layer security | High | Low - Deno validates approach |
 | Compiler-rewritten assert | High | Low - pytest/Zig prove value |
 | Zero-overhead C FFI | High | Low - Zig proves achievable |
+| Built-in observability | High | Low - <2% overhead proven |
+| Resource trait with Result | High | Low - addresses Drop limitations |
+| Contracts (require/ensure) | High | Low - 30 years of Eiffel experience |
+| Property-based testing | High | Low - highest adoption success |
+| Three-tier plugin system | High | Low - addresses different trust levels |
 | Region-based allocation | Medium | Medium - interface needs iteration |
 | Cloud-native primitives | Medium | Low - can start as runtime, promote later |
+| Hot reload foundation | Medium | Medium - requires careful runtime design |
+| Typestate for resources | Medium | Medium - ergonomics need iteration |
 
 ---
 
@@ -915,4 +1611,20 @@ service API:
 
 ---
 
-*This synthesis represents the culmination of 15 deep research investigations. Every major design decision has been validated by real-world implementations. The path forward is clear - time to build Indent.*
+## Research Foundation
+
+This design is informed by 37 deep research investigations across four rounds:
+
+**Round 1 - Core Mechanics (9 papers)**: Memory model, compilation stack, concurrency, types, errors, stdlib, tooling, scripting, cloud-native
+
+**Round 2 - Language Features (6 papers)**: Syntax, modules, metaprogramming, interop, testing, security
+
+**Round 3 - Ecosystem Gaps (10 papers)**: Error messages, strings/unicode, collections/iterators, extended syntax, async runtime, database access, configuration/build, documentation, profiling, testing patterns
+
+**Round 4 - Strategic (12 papers)**: Adoption strategy, production failures, AI code generation, hot reload, numerics, time/date, serialization, resource management, observability, developer experience, embedding/plugins, formal methods
+
+All research papers are available in `/research/` organized by category.
+
+---
+
+*This synthesis represents the culmination of 37 deep research investigations across all aspects of language design. Every major design decision has been validated by real-world implementations. The "one obvious way" philosophy is achievable across all features. The path forward is clear - time to build Indent.*
