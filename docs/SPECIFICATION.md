@@ -339,7 +339,49 @@ implement Printable for Rectangle:
 | `a +% b` | Wrapping addition |
 | `a +\| b` | Saturating addition |
 
-### 4.2 Comparison Expressions
+### 4.2 Collection Expressions
+
+```
+# List concatenation
+[1, 2] + [3, 4]        # [1, 2, 3, 4]
+
+# String concatenation
+"hello" + " " + "world" # "hello world"
+
+# Repetition
+[0] * 5                 # [0, 0, 0, 0, 0]
+"ab" * 3                # "ababab"
+
+# Containment
+5 in [1, 2, 3, 4, 5]    # true
+"x" not in "hello"      # true
+key in dict             # checks keys
+
+# Length (built-in function)
+len([1, 2, 3])          # 3
+len("hello")            # 5 (graphemes)
+len({1, 2, 3})          # 3
+```
+
+### 4.3 Set Operations
+
+```
+val a: Set[int] = {1, 2, 3}
+val b: Set[int] = {2, 3, 4}
+
+a | b                   # Union: {1, 2, 3, 4}
+a & b                   # Intersection: {2, 3}
+a - b                   # Difference: {1}
+a ^ b                   # Symmetric difference: {1, 4}
+
+# Subset/superset
+a <= b                  # Subset
+a < b                   # Proper subset
+a >= b                  # Superset
+a > b                   # Proper superset
+```
+
+### 4.5 Comparison Expressions
 
 ```
 a == b    # Equality
@@ -351,7 +393,7 @@ a >= b    # Greater than or equal
 a < b < c # Chained comparison
 ```
 
-### 4.3 Logical Expressions
+### 4.6 Logical Expressions
 
 ```
 a and b   # Logical AND (short-circuit)
@@ -359,13 +401,13 @@ a or b    # Logical OR (short-circuit)
 not a     # Logical NOT
 ```
 
-### 4.4 Conditional Expressions
+### 4.7 Conditional Expressions
 
 ```
 val value = if condition: x else: y
 ```
 
-### 4.5 Match Expressions
+### 4.8 Match Expressions
 
 ```
 val result = match value:
@@ -374,7 +416,7 @@ val result = match value:
     case _: "positive"
 ```
 
-### 4.6 Lambda Expressions
+### 4.9 Lambda Expressions
 
 ```
 val double = x -> x * 2
@@ -384,20 +426,20 @@ val complex = x ->
     y.finalize()
 ```
 
-### 4.7 Pipeline Expressions
+### 4.10 Pipeline Expressions
 
 ```
 data |> transform |> filter |> format
 # Equivalent to: format(filter(transform(data)))
 ```
 
-### 4.8 Optional Chaining
+### 4.11 Optional Chaining
 
 ```
 user?.address?.city ?? "Unknown"
 ```
 
-### 4.9 Block Expressions
+### 4.12 Block Expressions
 
 ```
 val result = {
@@ -481,6 +523,22 @@ break 'outer    # Exit labeled loop
 continue        # Skip to next iteration
 continue 'outer # Skip in labeled loop
 ```
+
+### 5.8 Increment and Decrement
+
+Increment and decrement are **statements only**, not expressions (Go-style):
+
+```
+var i = 0
+i++             # Increment by 1
+i--             # Decrement by 1
+
+# These are compile errors:
+val x = i++     # Error: ++ is a statement, not an expression
+arr[i++] = 5    # Error: cannot use ++ in expression position
+```
+
+This avoids the pre/post increment confusion and undefined behavior in complex expressions.
 
 ---
 
@@ -974,9 +1032,9 @@ None. All numeric conversions must be explicit.
 ### Explicit Conversions
 
 ```
-let i: i64 = i32_value.into()      # Widening (always safe)
-let s: i32 = i64_value.try_into()? # Narrowing (may fail)
-let b: u8 = value as u8            # Truncating cast (unchecked)
+val i: i64 = i32_value.into()      # Widening (always safe)
+val s: i32 = i64_value.try_into()? # Narrowing (may fail)
+val b: u8 = value as u8            # Truncating cast (unchecked)
 ```
 
 ---

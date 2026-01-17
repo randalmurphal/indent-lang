@@ -961,6 +961,27 @@ match value:
 | `not in` | Negated containment | `x not in collection` |
 | `is` | Identity | `a is b` |
 | `is not` | Negated identity | `a is not b` |
+| `++` / `--` | Increment/Decrement | `i++` (statement only, Go-style) |
+
+### Collection Operators
+
+Python-style intuitive collection operations:
+
+```
+# Concatenation
+[1, 2] + [3, 4]         # [1, 2, 3, 4]
+"hello" + " world"      # "hello world"
+
+# Repetition
+[0] * 5                 # [0, 0, 0, 0, 0]
+"-" * 20                # "--------------------"
+
+# Set operations
+a | b                   # Union
+a & b                   # Intersection
+a - b                   # Difference
+a ^ b                   # Symmetric difference
+```
 
 ### Default Arguments & Variadics
 
@@ -1518,6 +1539,8 @@ All high-priority questions have been resolved. See "Resolved" section below.
 | Associated types | Supported with simple syntax: `type Item` in trait definitions |
 | Method call syntax | `obj.method()` only, no UFCS ("one obvious way") |
 | Operator overloading | Limited: standard operators via traits (Add, Sub, etc.), no custom operators |
+| Increment/Decrement | `++`/`--` as statements only (Go-style), not expressions |
+| Collection operators | Python-style: `+` (concat), `*` (repeat), `in`, set ops (`\|`, `&`, `-`, `^`) |
 
 ---
 
