@@ -47,12 +47,31 @@ Standard library, tooling, and ecosystem concerns.
 | syntax_design.md | Extended Syntax | Lambda, kwargs, comprehensions |
 | testing_patterns.md | Extended Testing | Mocking, coverage, isolation |
 
+### 04-strategic/ - Strategic & Cross-Cutting
+Non-obvious research areas that affect language success.
+
+| File | Topic | Key Insights |
+|------|-------|--------------|
+| adoption_strategy.md | Language Adoption | Why languages succeed/fail, ecosystem bootstrap |
+| production_failures.md | Failure Modes | What crashes production, how to prevent |
+| ai_code_generation.md | AI/LLM Optimization | Syntax patterns for AI tools |
+| hot_reload.md | Hot Code Reload | Erlang-style live development feasibility |
+| numeric_computing.md | Numeric Computing | Integer overflow, SIMD, floating point |
+| time_date.md | Time & Date | Temporal types, timezone handling |
+| serialization.md | Serialization | Wire formats, schema evolution |
+| resource_management.md | Resource Management | Beyond memory: handles, connections |
+| observability.md | Observability | Tracing, logging, metrics as primitives |
+| developer_experience.md | Developer Psychology | Cognitive load, error messages, workflow |
+| embedding_plugins.md | Embedding & Plugins | WASM plugins, embedding API |
+| formal_methods.md | Formal Methods Lite | Contracts, property testing, refinements |
+
 ## Research Rounds
 
 1. **Round 1** (9 papers): Core mechanics - memory, compiler, concurrency, types, errors, stdlib, tooling, scripting, cloud-native
 2. **Round 2** (6 papers): Language features - syntax, modules, metaprogramming, interop, testing, security
 3. **Round 3** (10 papers): Gaps - error messages, strings, collections, syntax details, async runtime, database, config, docs, profiling, testing patterns
+4. **Round 4** (12 papers): Strategic - adoption, failures, AI, hot reload, numerics, time, serialization, resources, observability, DX, embedding, formal methods
 
-## Total: 25 Research Papers
+## Total: 37 Research Papers
 
 All findings are synthesized in [docs/00-overview/SYNTHESIS.md](../docs/00-overview/SYNTHESIS.md).
