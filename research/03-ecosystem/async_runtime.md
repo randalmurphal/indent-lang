@@ -125,6 +125,8 @@ For cross-platform support, implement:
 
 Note that Docker Desktop 4.42.0+ blocks io_uring for security (seccomp bypass), requiring automatic fallback in containerized deployments.
 
+**See also:** `research/03-ecosystem/io_uring_containers.md` for comprehensive container restriction research including detection algorithms, seccomp profiles, and Kubernetes configuration.
+
 ---
 
 ## Blocking operations: dedicated thread pool with @blocking annotation
@@ -384,3 +386,51 @@ For Indent's colorless async with structured concurrency, the recommended archit
 **Structured concurrency:** `concurrent { }` blocks integrate with cancellation propagation, and `spawn` creates child tasks in the current scope.
 
 This architecture prioritizes developer ergonomics (colorless async) and production reliability (observability) while achieving competitive performance through modern I/O (io_uring) and proven scheduler design (work-stealing with optimizations from both Go and Tokio).
+
+---
+
+## UPDATED DECISION: Zig-Style Io Interface (Stackless Default)
+
+**See also:** `research/01-core/colorless_async_design.md` for the full decision framework.
+
+After additional research on Zig's October 2025 `std.Io` interface, **the recommendation has been updated from pure stackful coroutines to a hybrid approach**:
+
+### Revised Architecture
+
+**Stackless by default (90% of code):** Compiler-generated state machines via Io interface. Memory per task: 64-256 bytes. WASM-compatible, zero overhead when devirtualized.
+
+**Stackful opt-in (10% of code):** For FFI callbacks, recursive algorithms, complex call stacks. Memory per task: ~2KB. Requires explicit `with stackful_io():` context.
+
+### Why This Change
+
+| Original Recommendation | Updated Recommendation |
+|------------------------|----------------------|
+| Stackful coroutines (Go-style) | Zig-style Io interface |
+| ~2.4KB per task | ~64-256 bytes per task |
+| Simpler mental model | Slightly more complex compiler |
+| Higher memory usage | Rust-level efficiency |
+
+### Container Deployment Strategy
+
+**See also:** `research/03-ecosystem/io_uring_containers.md`
+
+io_uring is blocked by default in most container environments. The runtime implements automatic detection and fallback:
+
+```c
+// Detection at startup
+io_backend_detection_t detect_best_backend() {
+    // 1. Check environment override (INDENT_IO_BACKEND)
+    // 2. Check kernel version (needs 5.10+)
+    // 3. Check sysctl io_uring_disabled
+    // 4. Probe syscall with io_uring_setup()
+    // 5. Fall back to epoll if any check fails
+}
+```
+
+| Environment | io_uring Status | Recommendation |
+|-------------|-----------------|----------------|
+| Bare metal Linux 5.10+ | Available | Enable io_uring |
+| Docker on Linux | Blocked by default | Use custom seccomp or epoll fallback |
+| Docker Desktop | Blocked at VM level | Use epoll fallback |
+| GKE Autopilot | Blocked | Use epoll fallback |
+| AWS Fargate | Likely blocked | Use epoll fallback |

@@ -513,17 +513,26 @@ Operator design affects both readability and correctness. Each choice here has b
 
 ### Null/Option handling operators
 
+> **DECISION NOTE:** The final design uses `.else()` and `.or()` methods instead of the `??` operator.
+> See `docs/SYNTHESIS.md` "Null Coalescing and Dict Access" for rationale. The `??` operator was
+> rejected because method syntax chains naturally and is self-documenting.
+
 ```
-# Nullish coalescing
+# Original research suggested:
 let name = user.name ?? "Anonymous"
 
-# Optional chaining
+# Final decision - method syntax:
+let name = user.name.else("Anonymous")      # Null coalescing
+let name = user.name.or("Anonymous")        # Falsy coalescing
+let name = user.name.else_do(fetch_default) # Lazy null coalescing
+
+# Optional chaining (unchanged)
 let city = user?.address?.city
 
 # Combined
-let city = user?.address?.city ?? "Unknown"
+let city = user?.address?.city.else("Unknown")
 
-# Error/None propagation (Rust-style)
+# Error/None propagation (Rust-style, unchanged)
 def get_user_city(id) -> Option[String]:
     let user = find_user(id)?
     let address = user.address?
@@ -564,7 +573,8 @@ a < b <= c < d             # All comparisons evaluated
 | Integer div | `//` | None | `/` (truncates) | `//` (floor) |
 | True div | `/` | `/` | `/` (for floats) | `/` (always float) |
 | Exponent | `**` | `**` | `.pow()` | `**` (parens required for negatives) |
-| Null coalesce | None | `??` | None | `??` |
+| Null coalesce | None | `??` | `.unwrap_or()` | `.else()` / `.else_do()` |
+| Falsy coalesce | `or` | `\|\|` | None | `.or()` / `.or_do()` / `or` |
 | Optional chain | None | `?.` | None | `?.` |
 | String concat | `+` | `+` (coerces) | `format!` | `+` (explicit types) |
 | Comparison chain | Yes | No | No | Yes |
@@ -636,7 +646,7 @@ Go's **enforced single formatting style** via `gofmt` is universally praised:
 | Pattern matching | Lambdas | Match in lambda body needs clear indentation rules |
 | Comprehensions | Pipelines | Must pick one as primary; both creates choice paralysis |
 | Slice `[a:b]` | Range `0:10` | Must use identical semantics for consistency |
-| `??` operator | Optional chaining `?.` | Compose naturally: `x?.y ?? default` |
+| `.else()` method | Optional chaining `?.` | Compose naturally: `x?.y.else(default)` |
 | Comparison chaining | `and` keyword | `0 < x < 10 and y > 0` reads naturally |
 
 ---
@@ -713,7 +723,7 @@ def main():
 | **Negative indices** | Supported | Ergonomic, with runtime bounds checking |
 | **Integer division** | `//` floor, `/` float | Clear semantics, no type ambiguity |
 | **Exponentiation** | `**` with paren requirement | Prevents `-2**2` confusion |
-| **Null handling** | `??` and `?.` | Essential ergonomics |
+| **Null handling** | `.else()`, `.or()`, `?.` | Method-based coalescing + optional chaining |
 | **Comparison chain** | Supported | Natural mathematical notation |
 | **Formatter** | Built-in, opinionated | Eliminates style debates |
 

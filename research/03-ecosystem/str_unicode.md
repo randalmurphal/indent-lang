@@ -246,3 +246,31 @@ f"interpolation {expr}" -> String
 ```
 
 This design balances Python's ergonomics with Rust's safety and Swift's Unicode correctness, providing a foundation for string handling that is both performant and resistant to internationalization bugs. The explicit ownership model enables zero-copy optimizations critical for systems programming, while the grapheme-first semantics prevent the class of bugs that plague UTF-16 languages when handling emoji, combining characters, and non-Latin scripts.
+
+---
+
+## Implementation Strategy (Rust Runtime)
+
+**See also:** `research/03-ecosystem/grapheme_iteration_impl.md` for detailed implementation research.
+
+The Indent runtime implementation should combine specialized Rust crates for optimal performance:
+
+| Purpose | Crate | Rationale |
+|---------|-------|-----------|
+| Grapheme iteration | `unicode-segmentation` | Zero-copy, fast, well-maintained |
+| UTF-8 validation | `simdutf8` | 4-23× faster than std |
+| Byte search | `memchr` | 5-6× faster than std |
+| Small string optimization | `compact_str` | 24-byte inline, mutable |
+
+**Performance expectations:**
+- **Pure ASCII:** 3-4× speedup via SIMD fast-path detection
+- **Mostly ASCII (JSON/HTML):** 2.5-3.5× speedup
+- **Mixed Unicode (CJK):** 1.5-2× speedup
+- **Emoji-heavy:** 1.2-1.5× speedup
+
+**Key implementation decisions:**
+1. Use `unicode-segmentation` over icu4x—simpler API, sufficient for grapheme-only needs
+2. Implement ASCII fast-path checking (`is_ascii()`) before any grapheme computation
+3. Cache grapheme count lazily but **not** full boundary tables (avoids 5-10× overhead)
+4. Invalidate cache on any mutation (simple, correct, fast enough)
+5. Expose iteration as byte-range pairs for FFI efficiency

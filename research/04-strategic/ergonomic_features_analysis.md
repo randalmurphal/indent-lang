@@ -308,9 +308,19 @@ func validate(user: User?) -> Result:
 
 #### 1.4.2 Optional Chaining and Nil Coalescing
 
-**Current State:** Already in spec: `?.` and `??`
+> **DECISION UPDATE:** The `??` operator was replaced with `.else()` and `.or()` methods.
+> See `docs/SYNTHESIS.md` for the complete coalescing pattern.
 
-**Verification:** `user?.address?.city ?? "Unknown"` - already specified. No changes needed.
+**Current State:** Optional chaining `?.` is unchanged. Null coalescing uses method syntax:
+
+**Final Syntax:**
+```
+user?.address?.city.else("Unknown")      # Null coalescing (None only)
+user?.address?.city.or("Unknown")        # Falsy coalescing
+user?.address?.city.else_do(fetch_city)  # Lazy null coalescing
+```
+
+**Rationale:** Method syntax chains naturally and is self-documenting. The `??` operator requires learning; `.else()` reads as English.
 
 ### 1.5 JavaScript Spread Operator and Destructuring
 
@@ -801,7 +811,7 @@ func append(item: Item, items: List[Item] = []):
 
 # OK: None default, create inside
 func append(item: Item, items: Option[List[Item]] = None):
-    var list = items ?? []
+    var list = items.else([])
     list.push(item)
     return list
 ```

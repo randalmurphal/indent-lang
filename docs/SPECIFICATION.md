@@ -79,12 +79,14 @@ and  or   not
 =    +=   -=   *=   /=   //=  %=   **=
 &=   |=   ^=   <<=  >>=
 
-# Special Arithmetic
-+%   -%   *%   /%     # Wrapping
-+|   -|   *|   /|     # Saturating
+# Note: Wrapping/saturating arithmetic uses methods, not operators
+# e.g., a.wrapping_add(b), a.saturating_add(b)
 
 # Other
-->   |>   ?.   ??   ?    ...  @
+->   |>   ?.   ?    ...  @
+
+# Note: Null-coalescing uses .else() method, not ?? operator
+# e.g., x.else(default) returns x if not None, otherwise default
 
 # Delimiters
 (    )    [    ]    {    }
@@ -113,16 +115,20 @@ and  or   not
 
 #### String Literals
 
+Both single and double quotes are allowed. Single quotes are preferred (Python style).
+
 ```
-"hello"              # Basic string
-"line1\nline2"       # Escape sequences
-f"Hello, {name}!"    # Interpolated string
-r"raw\nstring"       # Raw string (no escapes)
-b"bytes"             # Byte string
-"""
+'hello'              # Basic string (preferred)
+"hello"              # Also valid
+'line1\nline2'       # Escape sequences
+f'Hello, {name}!'    # Interpolated string
+f'User: {user["name"]}'  # f-string with inner double quotes
+r'raw\nstring'       # Raw string (no escapes)
+b'bytes'             # Byte string
+'''
 multiline
 string
-"""
+'''
 ```
 
 #### Escape Sequences
@@ -148,12 +154,14 @@ string
 | Type | Description | Size |
 |------|-------------|------|
 | `bool` | Boolean | 1 byte |
-| `i8`, `i16`, `i32`, `i64`, `i128` | Signed integers | 1, 2, 4, 8, 16 bytes |
-| `u8`, `u16`, `u32`, `u64`, `u128` | Unsigned integers | 1, 2, 4, 8, 16 bytes |
-| `isize`, `usize` | Pointer-sized integers | Platform-dependent |
-| `f32`, `f64` | IEEE 754 floats | 4, 8 bytes |
+| `int` | Default signed integer (i64) | 8 bytes |
+| `int8`, `int16`, `int32`, `int64` | Explicit signed integers | 1, 2, 4, 8 bytes |
+| `uint8`, `uint16`, `uint32`, `uint64` | Unsigned integers | 1, 2, 4, 8 bytes |
+| `float32`, `float64` | IEEE 754 floats | 4, 8 bytes |
 | `char` | Unicode scalar value | 4 bytes |
 | `()` | Unit type | 0 bytes |
+
+**Note:** `int` is the default and should be used unless you need specific sizes for arrays, structs, or FFI. It provides a range of ±9 quintillion which virtually never overflows.
 
 ### 2.2 String Types
 
@@ -193,6 +201,39 @@ Set[T]          # Hash set
 Deque[T]        # Double-ended queue
 Sorted[T]       # B-tree based ordered collection
 ```
+
+#### Dict Access Patterns
+
+```
+val user = {"name": "Alice", "age": 30}
+
+# Strict access - fails if key missing (KeyError)
+user['name']              # "Alice"
+user['email']             # KeyError: 'email'
+
+# Safe access - returns None if key missing
+user.get('name')          # "Alice"
+user.get('email')         # None
+
+# Safe access with null-only default (chains)
+user.get('email').else("unknown@example.com")
+
+# Safe access with falsy default (chains)
+user.get('settings').or({}).get('theme')
+
+# Safe access with falsy default (terminal, no more chaining)
+theme = user.get('theme') or "dark"
+
+# Lazy evaluation - only compute default if needed
+user.get('theme').else_do(fetch_default_theme)
+user.get('settings').or_do(load_default_settings).get('theme')
+```
+
+**Design rationale:**
+- No `dict.get(key, default)` two-argument form—forces explicit choice between `.else()` (null-only) and `.or()` (falsy)
+- No `dict.field` syntax for key access—avoids method name collisions (`get`, `keys`, `values`) and catches typos at compile/runtime instead of silently returning None
+- `.or()` method enables chaining; `or` operator is for terminal use only
+- `_do` variants accept functions for lazy evaluation of expensive defaults
 
 ### 2.5 Option and Result
 
@@ -328,7 +369,7 @@ implement Printable for Rectangle:
 
 | Operator | Description |
 |----------|-------------|
-| `a + b` | Addition (checked) |
+| `a + b` | Addition (checked, panics on overflow) |
 | `a - b` | Subtraction (checked) |
 | `a * b` | Multiplication (checked) |
 | `a / b` | Division |
@@ -336,8 +377,9 @@ implement Printable for Rectangle:
 | `a % b` | Remainder |
 | `a ** b` | Exponentiation |
 | `-a` | Negation |
-| `a +% b` | Wrapping addition |
-| `a +\| b` | Saturating addition |
+| `a.wrapping_add(b)` | Wrapping addition (two's complement) |
+| `a.saturating_add(b)` | Saturating addition (clamps to MIN/MAX) |
+| `a.checked_add(b)` | Checked addition (returns `Option[T]`) |
 
 ### 4.2 Collection Expressions
 
@@ -433,11 +475,45 @@ data |> transform |> filter |> format
 # Equivalent to: format(filter(transform(data)))
 ```
 
-### 4.11 Optional Chaining
+### 4.11 Optional Chaining and Null Coalescing
 
 ```
-user?.address?.city ?? "Unknown"
+# Optional chaining - short-circuits on None
+user?.address?.city
+
+# Null coalescing (None only) - provides default when None
+user?.address?.city.else("Unknown")
+
+# Falsy coalescing - provides default when falsy (0, "", false, None)
+user?.address?.city.or("Unknown")
+
+# Falsy coalescing (terminal, no chaining) - same as above but can't chain after
+theme = user.get('theme') or "dark"
 ```
+
+#### Lazy Evaluation Variants
+
+When the default value is expensive to compute, use the `_do` variants which accept a function:
+
+```
+# Only calls fetch_default() if value is None
+user.get('theme').else_do(fetch_default)
+
+# Only calls fetch_default() if value is falsy
+user.get('theme').or_do(fetch_default)
+```
+
+#### Coalescing Method Summary
+
+| Method | Triggers on | Input | Chains? |
+|--------|-------------|-------|---------|
+| `.else(val)` | None | Value (eager) | Yes |
+| `.else_do(fn)` | None | Function (lazy) | Yes |
+| `.or(val)` | Falsy | Value (eager) | Yes |
+| `.or_do(fn)` | Falsy | Function (lazy) | Yes |
+| `x or y` | Falsy | Value | No (terminal) |
+
+**Design note:** Indent uses method syntax (`.else()`, `.or()`) rather than operators (`??`) for null coalescing because methods chain naturally and are self-documenting. The method names match Rust's `Option::or()` pattern.
 
 ### 4.12 Block Expressions
 
@@ -808,15 +884,15 @@ struct User:
 
 ```
 @test
-fn test_addition():
+func test_addition():
     assert 2 + 2 == 4
 
 @trace(level: Info)
-fn process_request(req: Request) -> Response:
+func process_request(req: Request) -> Response:
     ...
 
 @blocking
-fn read_file_sync(path: str) -> bytes:
+func read_file_sync(path: str) -> bytes:
     ...
 ```
 
@@ -824,11 +900,11 @@ fn read_file_sync(path: str) -> bytes:
 
 ```
 @cfg(target_os: "linux")
-fn linux_specific():
+func linux_specific():
     ...
 
 @cfg(feature: "debug")
-fn debug_only():
+func debug_only():
     ...
 ```
 
@@ -1017,8 +1093,9 @@ type = IDENT [ "[" type_args "]" ]
 | 10 | `in` `not in` `is` `is not` `<` `>` `<=` `>=` `==` `!=` | Left |
 | 11 | `and` | Left |
 | 12 | `or` | Left |
-| 13 | `??` | Left |
-| 14 | `\|>` | Left |
+| 13 | `\|>` | Left |
+
+Note: `.else()` is a method call (precedence 1), not an operator. Use `x.else(default)` for null-coalescing.
 | 15 (lowest) | `=` `+=` `-=` etc. | Right |
 
 ---

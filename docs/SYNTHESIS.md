@@ -32,7 +32,7 @@ The research validates our core vision while sharpening specific technical choic
 | Cloud-native | Built-in patterns | **Expanded** - more should be language primitives | High |
 | Strings | UTF-8 + graphemes | **Validated** - grapheme-first len(), no integer indexing | High |
 | Collections | Iterator protocol | **Validated** - Option-based, Swiss Tables, comprehensions | High |
-| Async Runtime | Stackful coroutines | **Validated** - work-stealing, io_uring, 2KB stacks | High |
+| Async Runtime | Zig-style Io interface | **REFINED** - stackless default, stackful opt-in, io_uring w/fallback | High |
 | Serialization | serde-style | **Validated** - format-agnostic, derive-based | High |
 | Time/Date | java.time model | **Validated** - separate Instant/LocalDateTime, explicit TZ | High |
 | Numerics | Checked by default | **Validated** - explicit wrapping ops, first-class SIMD | High |
@@ -154,13 +154,16 @@ From Go's lessons, **enforce these in the language**:
 
 ## Concurrency Model: Final Design
 
+**See also:** `research/01-core/concurrency.md`, `research/01-core/colorless_async_design.md`
+
 ### Research Findings
 
 1. **Go goroutines**: 2KB stack, 1-5μs spawn, simple but leak-prone
 2. **Rust tokio**: 64 bytes/task, 10ns spawn, colored functions
-3. **Kotlin structured concurrency**: Best of both with Job hierarchy
-4. **FFI is the hard problem**: All green threads struggle with blocking C
-5. **Discord's Go→Rust migration**: Eliminated 40ms GC latency spikes
+3. **Zig's Io interface**: Colorless semantics with stackless efficiency
+4. **Kotlin structured concurrency**: Best of both with Job hierarchy
+5. **FFI is the hard problem**: All green threads struggle with blocking C
+6. **Discord's Go→Rust migration**: Eliminated 40ms GC latency spikes
 
 ### Recommended Architecture
 
@@ -195,12 +198,14 @@ func call_legacy_c_lib(data: bytes) -> bytes:
 | Channels | Built-in, typed | Go's channels are excellent |
 | Select | Built-in `select { }` | Essential for multiplexing |
 
-### Key Insight: No Colored Functions
+### Key Insight: Colorless via Zig-Style Io Interface
 
-Research confirms colorless functions are achievable:
-- Runtime handles suspension transparently (like Go's netpoller)
-- Mark potential yield points in source for readability: `await` optional keyword
-- Compiles to same code either way
+Research confirms colorless functions are achievable **without** Go's 2KB stack overhead:
+- Compiler analyzes call graph to identify functions that touch Io
+- Io-touching functions get transformed to state machines (stackless)
+- Runtime handles suspension transparently (no `async`/`await` coloring)
+- Stackful coroutines available via `@stackful` annotation for FFI/recursive cases
+- Result: Go's ergonomics with Rust's memory efficiency
 
 ---
 
@@ -254,6 +259,31 @@ newtype UserId(str)
 newtype OrderId(str)
 # UserId and OrderId cannot be confused despite both being strings
 ```
+
+### Extension Methods and Trait Coherence
+
+**See also:** `research/02-language/extension_methods.md`
+
+Indent adopts **import-scoped nominal extensions** alongside **automatic structural trait satisfaction**:
+
+```python
+# Form 1: Adding methods without trait conformance
+extend String:
+    def truncate(self, max_len: int) -> String:
+        if len(self) <= max_len:
+            return self
+        return self[:max_len - 3] + "..."
+
+# Form 2: Implementing a trait for an external type
+extend Config implements Serializable:
+    def serialize(self) -> bytes:
+        return json.dumps(self.__dict__).encode()
+```
+
+**Coherence rules:**
+- Extensions are module-scoped by default, require explicit import
+- Member methods always win over extension methods (Kotlin semantics)
+- Multiple implementations can exist; conflicts require explicit disambiguation
 
 ---
 
@@ -322,9 +352,15 @@ match load_config(path):
 | Boolean operators | `and`, `or`, `not` | Cognitive research favors words |
 | Comparison chaining | `a < b < c` | Python's most loved feature |
 | Control flow | Expression-oriented | `x = if cond: a else: b` |
-| String interpolation | `f"value: {x}"` | Python familiarity |
+| String quotes | Both `'` and `"` allowed | Single preferred (Python style), formatter normalizes |
+| String interpolation | `f'value: {x}'` | Python familiarity, f-strings use opposite quote for inner refs |
+| Trailing commas | Allowed | No enforcement either way |
 | Comments | `#` line, no block | One way to comment |
 | Function syntax | `func name(args) -> Type:` | Explicit, searchable |
+| Null coalescing | `x.else(val)` / `x.else_do(fn)` | Method syntax, not `??`—self-documenting, chains |
+| Falsy coalescing | `x.or(val)` / `x.or_do(fn)` | Method form for chaining; `x or val` for terminal |
+| Dict safe access | `dict.get('key')` | No two-arg form—forces `.else()` or `.or()` choice |
+| Dict strict access | `dict['key']` | Fails on missing key, catches typos |
 
 ### Syntax Sample
 
@@ -819,6 +855,8 @@ service API:
 
 ## Strings & Unicode: Final Design
 
+**See also:** `research/03-ecosystem/str_unicode.md`, `research/03-ecosystem/grapheme_iteration_impl.md`
+
 ### Research Findings
 
 1. **UTF-8 wins universally** - All modern languages (Rust, Go, Swift) use UTF-8 internally
@@ -826,6 +864,7 @@ service API:
 3. **Integer indexing is harmful** - O(n) for UTF-8, encourages bugs
 4. **Owned vs borrowed is essential** - `String` (heap) vs `str` (view)
 5. **Linear-time regex prevents ReDoS** - RE2 semantics for safety
+6. **SIMD accelerates UTF-8 validation** - simdutf8 is 4-23× faster than std
 
 ### Specific Decisions
 
@@ -953,7 +992,10 @@ match value:
 | Operator | Meaning | Example |
 |----------|---------|---------|
 | `\|>` | Pipeline | `data \|> transform \|> format` |
-| `??` | Null coalesce | `x ?? default` |
+| `.else(val)` | Null coalesce (eager) | `x.else(default)` |
+| `.else_do(fn)` | Null coalesce (lazy) | `x.else_do(compute)` |
+| `.or(val)` | Falsy coalesce (eager) | `x.or({}).get('key')` |
+| `.or_do(fn)` | Falsy coalesce (lazy) | `x.or_do(compute)` |
 | `?.` | Optional chain | `user?.address?.city` |
 | `//` | Integer division | `7 // 3 == 2` |
 | `**` | Exponentiation | `2 ** 10 == 1024` |
@@ -983,6 +1025,88 @@ a - b                   # Difference
 a ^ b                   # Symmetric difference
 ```
 
+### Null Coalescing and Dict Access
+
+**The complete coalescing pattern:**
+
+| Method | Triggers on | Input | Chains? |
+|--------|-------------|-------|---------|
+| `.else(val)` | None | Value (eager) | Yes |
+| `.else_do(fn)` | None | Function (lazy) | Yes |
+| `.or(val)` | Falsy | Value (eager) | Yes |
+| `.or_do(fn)` | Falsy | Function (lazy) | Yes |
+| `x or y` | Falsy | Value | No (terminal) |
+
+```
+# Null coalescing - chains naturally
+user.get('email').else("unknown@example.com")
+
+# Falsy coalescing - chains naturally (method form)
+user.get('settings').or({}).get('theme')
+
+# Falsy coalescing - terminal use (operator form)
+theme = user.get('theme') or "dark"
+
+# Lazy evaluation - only compute default if needed
+user.get('config').else_do(load_default_config)
+user.get('settings').or_do(fetch_defaults).get('theme')
+```
+
+**Why `.else()` and `.or()` instead of `??`:**
+
+The `??` operator (from TypeScript/C#/Swift) requires learning—it's not obvious to newcomers what it does. Using methods is self-documenting:
+
+```
+# Without context, what does this mean?
+user?.name ?? "Anonymous"
+
+# This reads naturally: "user's name, else Anonymous"
+user?.name.else("Anonymous")
+```
+
+Testing with context-free LLM evaluation confirmed that `.else()` is intuitable without documentation. The `.or()` method matches Rust's `Option::or()` pattern—a 2-letter method that's well-established.
+
+**Why both `.or()` method and `or` operator?**
+
+The `or` operator cannot chain—`x or default.method()` parses as `x or (default.method())`. The `.or()` method enables chaining:
+
+```
+# This doesn't work - parses wrong
+user.get('settings') or {}.get('theme')  # ERROR
+
+# This works - method chains correctly
+user.get('settings').or({}).get('theme')  # OK
+```
+
+Use `.or()` when chaining continues; use `or` at the terminal position.
+
+**Why `_do` variants for lazy evaluation?**
+
+When the default is expensive to compute:
+
+```
+# Eager - fetch_theme() is ALWAYS called
+user.get('theme').else(fetch_theme())
+
+# Lazy - fetch_theme only called if needed
+user.get('theme').else_do(fetch_theme)
+```
+
+**Why no `dict.get(key, default)` two-argument form:**
+
+Python's `dict.get('key', default)` and `dict.get('key') or default` look similar but behave differently. By only providing single-argument `.get()`, Indent forces an explicit choice between `.else()` (null-only) and `.or()` (falsy).
+
+**Why no `dict.field` syntax for key access:**
+
+Allowing `dict.field` as sugar for `dict['field']` creates ambiguity with methods:
+
+```
+user.get      # The .get() method, or a key named "get"?
+user.keys     # The .keys() method, or a key named "keys"?
+```
+
+Bracket access `dict['field']` is explicit and avoids collisions.
+
 ### Default Arguments & Variadics
 
 ```
@@ -1001,13 +1125,54 @@ func configure(**options: Value):
 
 ## Async Runtime Architecture: Final Design
 
+**See also:** `research/01-core/colorless_async_design.md`, `research/03-ecosystem/io_uring_containers.md`
+
 ### Research Findings
 
-1. **Stackful coroutines enable colorless async** - No function coloring
-2. **Work-stealing is optimal for CPU-bound** - Tokio, Go, Rayon all use it
-3. **io_uring is 40% faster than epoll** - But needs fallback for older kernels
-4. **2KB stacks are sufficient** - Growable to 1GB when needed
-5. **SIGURG enables safe preemption** - Go 1.14+ approach
+1. **Zig's Io interface achieves colorless without stacks** - Compiler call graph analysis
+2. **Stackless: bytes per task vs stackful: KB per task** - 10-100× memory difference
+3. **Work-stealing is optimal for CPU-bound** - Tokio, Go, Rayon all use it
+4. **io_uring is 40% faster than epoll** - But containers often restrict it
+5. **WASM needs stackless** - Stack switching emulation is expensive
+
+### DECISION: Zig-Style Io Interface (Hybrid Model)
+
+After extensive research, Indent adopts a **Zig-inspired Io interface approach** with stackful opt-in:
+
+- **Stackless by default (90% of code)**: Compiler-generated state machines, bytes per task
+- **Stackful opt-in (10% of code)**: For FFI callbacks, recursive algorithms, complex control flow
+
+```
+Indent Source Code (no async keyword)
+              ↓
+    Compiler Call Graph Analysis
+              ↓
+    ┌─────────────────────────────────┐
+    │  Functions touching Io get      │
+    │  transformed to state machines  │
+    │  (stackless by default)         │
+    └─────────────────────────────────┘
+              ↓
+    Optional stackful coroutines for
+    FFI/complex cases via explicit context
+```
+
+### Recommended Syntax
+
+```python
+# Io context established at boundary
+def fetch_user(id: int) -> User:
+    return http.get(f"/users/{id}").json()  # Io implicitly available
+
+def main():
+    with async_io():  # Context block establishes Io
+        concurrent:   # Structured concurrency block
+            user = fetch_user(123)
+            orders = fetch_orders(123)
+
+        # Both complete here
+        print(f"{user.name} has {len(orders)} orders")
+```
 
 ### Runtime Architecture
 
@@ -1029,23 +1194,42 @@ func configure(**options: Value):
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    I/O Backend                               │
-│  • io_uring primary (Linux 5.1+)                            │
-│  • epoll fallback (older Linux)                             │
+│  • io_uring primary (Linux 5.1+, non-container)             │
+│  • epoll fallback (older Linux, containers)                 │
 │  • kqueue (macOS/BSD)                                       │
+│  • Automatic detection of container restrictions            │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Container io_uring Strategy
+
+Containers often restrict io_uring via seccomp. The runtime detects this automatically:
+
+| Environment | Detection | Backend |
+|-------------|-----------|---------|
+| Bare metal Linux 5.1+ | Probe succeeds | io_uring |
+| Container with CAP_SYS_ADMIN | Probe succeeds | io_uring |
+| Restricted container | EPERM on probe | epoll fallback |
+| macOS/BSD | N/A | kqueue |
 
 ### Specific Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Coroutine model | Stackful, 2KB initial | Colorless async |
-| Stack growth | Segmented, up to 1GB | Handle deep recursion |
+| Default model | Stackless (Zig-style Io) | Memory efficiency, WASM support |
+| Opt-in stackful | `@stackful` annotation | FFI, recursion, complex control |
+| Memory per task | 64-256 bytes typical | vs 2KB+ for stackful |
 | Scheduler | Work-stealing, N:M | Best for mixed workloads |
-| I/O primary | io_uring | 40% faster than epoll |
+| I/O primary | io_uring with auto-fallback | Performance + compatibility |
 | Timer implementation | Hierarchical timing wheels | O(1) insertion |
-| Preemption | SIGURG-based (Go style) | Safe points at function entry |
 | Blocking FFI | `@blocking` annotation | Dedicated thread pool |
+
+### Implementation Roadmap
+
+1. **Phase 1:** Implement blocking Io (baseline, zero async overhead)
+2. **Phase 2:** Add thread-pool Io (multiplexed blocking)
+3. **Phase 3:** Add compiler-driven stackless coroutines
+4. **Phase 4:** Optional stackful coroutines for FFI/recursive cases
 
 ---
 
@@ -1138,22 +1322,43 @@ func is_overdue(deadline: Instant, clock: Clock = SystemClock) -> bool:
 
 ## Numeric Computing: Final Design
 
+**See also:** `research/04-strategic/llvm_overflow_elision.md`
+
 ### Research Findings
 
 1. **Checked arithmetic by default** - Catches bugs, CVE prevention
-2. **IEEE 754 strict by default** - SSE2 minimum, per-function fast-math opt-in
-3. **First-class SIMD vectors** - Zig-style `Vector(N, T)` with operators
-4. **Explicit conversions only** - No silent truncation
-5. **Decimal types for money** - Binary floats can't represent 0.1 exactly
+2. **LLVM eliminates 40-50% of overflow checks at -O3** - Real overhead typically 5-12%
+3. **IEEE 754 strict by default** - SSE2 minimum, per-function fast-math opt-in
+4. **First-class SIMD vectors** - Zig-style `Vector(N, T)` with operators
+5. **Explicit conversions only** - No silent truncation
+6. **Decimal types for money** - Binary floats can't represent 0.1 exactly
 
 ### Overflow Handling
 
 | Operation | Syntax | Behavior |
 |-----------|--------|----------|
 | Default | `a + b` | Checked (panic on overflow) |
-| Wrapping | `a +% b` | Two's complement modular |
-| Saturating | `a +\| b` | Clamps to MIN/MAX |
+| Wrapping | `a.wrapping_add(b)` | Two's complement modular |
+| Saturating | `a.saturating_add(b)` | Clamps to MIN/MAX |
 | Checked | `a.checked_add(b)` | Returns `Option[T]` |
+
+**Note:** Wrapping and saturating use methods, not operators. This keeps operators simple and makes the intent explicit. These are primarily used in crypto, hashing, and audio/graphics code.
+
+### Integer Types
+
+| Type | Size | Range | Use Case |
+|------|------|-------|----------|
+| `int` | 64-bit | ±9 quintillion | Default, just use this |
+| `int8` | 8-bit | -128 to 127 | Compact storage |
+| `int16` | 16-bit | ±32,767 | Compact storage |
+| `int32` | 32-bit | ±2 billion | C interop, compact arrays |
+| `int64` | 64-bit | ±9 quintillion | Explicit 64-bit |
+| `uint8` | 8-bit | 0 to 255 | Bytes, pixels |
+| `uint16` | 16-bit | 0 to 65,535 | Compact storage |
+| `uint32` | 32-bit | 0 to 4 billion | C interop |
+| `uint64` | 64-bit | 0 to 18 quintillion | Explicit unsigned |
+
+**Default is i64:** The `int` type is 64-bit signed, providing a huge range that virtually never overflows in practice. Explicit sizes (`int8`, `int32`, etc.) are available for arrays, structs, and FFI where memory layout matters. The compiler optimizes literal values automatically.
 
 ### SIMD Support
 
@@ -1527,7 +1732,10 @@ All high-priority questions have been resolved. See "Resolved" section below.
 | String semantics | UTF-8 internal, grapheme-first `len()`, no integer indexing |
 | Iterator protocol | Option-based `next()`, three modes (borrow, mut borrow, consume) |
 | Comprehensions | Python-style `[x for x in xs if cond]` alongside method chains |
-| Integer overflow | Checked by default, explicit wrapping/saturating operators |
+| Integer overflow | Checked by default, wrapping/saturating via methods only |
+| Integer types | `int` = i64 default, explicit `int8`/`int16`/`int32`/`int64` available |
+| String quotes | Both `'` and `"` allowed, single preferred, formatter normalizes |
+| Trailing commas | Allowed, no enforcement |
 | Time types | java.time model with Instant/LocalDateTime separation |
 | Serialization | serde-style format-agnostic with Serialize/Deserialize derives |
 | Observability | Built-in tracing with `@trace` attribute, <2% overhead |
@@ -1541,6 +1749,9 @@ All high-priority questions have been resolved. See "Resolved" section below.
 | Operator overloading | Limited: standard operators via traits (Add, Sub, etc.), no custom operators |
 | Increment/Decrement | `++`/`--` as statements only (Go-style), not expressions |
 | Collection operators | Python-style: `+` (concat), `*` (repeat), `in`, set ops (`\|`, `&`, `-`, `^`) |
+| Async implementation | Zig-style Io interface: stackless default (bytes/task), stackful opt-in for FFI |
+| Extension methods | Import-scoped nominal extensions, member methods always win |
+| io_uring strategy | Auto-detect container restrictions, fallback to epoll when restricted |
 
 ---
 
@@ -1636,7 +1847,7 @@ All high-priority questions have been resolved. See "Resolved" section below.
 
 ## Research Foundation
 
-This design is informed by 37 deep research investigations across four rounds:
+This design is informed by 42 deep research investigations across five rounds:
 
 **Round 1 - Core Mechanics (9 papers)**: Memory model, compilation stack, concurrency, types, errors, stdlib, tooling, scripting, cloud-native
 
@@ -1645,6 +1856,8 @@ This design is informed by 37 deep research investigations across four rounds:
 **Round 3 - Ecosystem Gaps (10 papers)**: Error messages, strings/unicode, collections/iterators, extended syntax, async runtime, database access, configuration/build, documentation, profiling, testing patterns
 
 **Round 4 - Strategic (12 papers)**: Adoption strategy, production failures, AI code generation, hot reload, numerics, time/date, serialization, resource management, observability, developer experience, embedding/plugins, formal methods
+
+**Round 5 - Implementation Details (5 papers)**: Colorless async design (Zig-style Io interface), extension methods and trait coherence, grapheme iteration implementation, LLVM overflow check elision, io_uring container restrictions
 
 All research papers are available in `/research/` organized by category.
 

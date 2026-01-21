@@ -245,3 +245,61 @@ Based on this research, here's a synthesis optimized for your requirements (Pyth
 - Learn from Elm: conversational tone, link to documentation
 
 The research demonstrates that this combination is achievable. TypeScript, Kotlin, and Swift prove excellent inference doesn't require HM. Salsa proves sub-second incremental with complex types is possible. Swift's witness tables prove hybrid generics can balance performance and compile time. The path forward is clear—it's an engineering challenge, not a research gap.
+
+---
+
+## Extension Methods and Trait Coherence
+
+**See also:** `research/02-language/extension_methods.md` for detailed design and edge cases.
+
+Indent adopts **import-scoped nominal extensions** alongside **automatic structural trait satisfaction**.
+
+### Syntax Specification
+
+```python
+# Form 1: Adding methods without trait conformance
+extend String:
+    def truncate(self, max_len: int) -> String:
+        if len(self) <= max_len:
+            return self
+        return self[:max_len - 3] + "..."
+
+# Form 2: Implementing a trait for an external type
+extend Config implements Serializable:
+    def serialize(self) -> bytes:
+        return json.dumps(self.__dict__).encode()
+
+# Form 3: Conditional conformance (generic extensions)
+extend List[T] implements Equatable where T implements Equatable:
+    def __eq__(self, other: List[T]) -> bool:
+        return len(self) == len(other) and all(a == b for a, b in zip(self, other))
+```
+
+### Coherence Rules
+
+| Trait Type | Coherence Model | Resolution |
+|------------|-----------------|------------|
+| Structural | None needed (method matching) | Automatic satisfaction |
+| Nominal | Import-scoped | Conflicts detected at use-site |
+
+**Key design decisions:**
+1. Extensions are **module-scoped by default** and require explicit import
+2. **Member methods always win** over extension methods (Kotlin semantics)
+3. Multiple implementations can exist in different modules; conflicts require explicit disambiguation
+4. Swift-style **witness table accessor functions** for conditional conformance
+
+### Disambiguation for Conflicts
+
+```python
+from json_ext import extend Config implements Serializable as json_serial
+from xml_ext import extend Config implements Serializable as xml_serial
+
+def export(cfg: Config, format: Format) -> bytes:
+    match format:
+        case Format.JSON:
+            with using json_serial:
+                return cfg.serialize()
+        case Format.XML:
+            with using xml_serial:
+                return cfg.serialize()
+```

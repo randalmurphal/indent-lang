@@ -218,3 +218,46 @@ LLVM's PGO enables branch weight annotation, hot/cold splitting, and optimized i
 | **Bounds checks** | Eliminate via iterators, slicing patterns | 2-5% overhead when unavoidable |
 
 These design choices position Indent as a pragmatic successor to Go and Rust for backend workloads—catching numeric bugs at compile time while generating competitive machine code. The explicit-by-default philosophy may require more keystrokes than C or Go, but prevents the silent corruption and security vulnerabilities that plague production systems built in those languages.
+
+---
+
+## LLVM Overflow Check Elision (2025 State)
+
+**See also:** `research/04-strategic/llvm_overflow_elision.md` for detailed benchmarks and analysis.
+
+### Current LLVM Capabilities (v18-20)
+
+LLVM eliminates approximately **40-50% of overflow checks at -O3**, with real-world overhead typically **5-12%** for backend workloads. The primary cost isn't the check instructions themselves but **blocked vectorization**, which can cause 40%+ overhead in tight numerical loops.
+
+| Optimization | Status |
+|-------------|--------|
+| ConstraintElimination | Active, eliminates checks when dominating conditions prove safety |
+| CorrelatedValuePropagation | Tracks value ranges at each program point |
+| InstCombine | Recognizes dozens of overflow-safe patterns |
+| January 2026 RFC (conditional trap) | In discussion, ~0.5% improvement on Skylake |
+
+### Cranelift Comparison
+
+Cranelift provides **no overflow check elimination**. Dev builds via Cranelift will carry full checking overhead but compile 20-40% faster. This is acceptable because:
+- Dev builds prioritize iteration speed over runtime performance
+- Explicit wrapping operators (`+%`, `-%`) sidestep checks entirely
+- Release builds use LLVM with full optimization
+
+### Performance Expectations by Workload
+
+| Workload Type | Expected Overhead | Notes |
+|--------------|------------------|-------|
+| JSON parsing | 3-8% | Branch-heavy, minimal vectorization impact |
+| HTTP handling | 2-5% | I/O dominated |
+| Database queries | 3-7% | Memory bandwidth limited |
+| Compression | 15-40% | Vectorization-critical, use `+%` in hot paths |
+| Cryptography | 10-25% | Intentional wrapping common |
+| General CRUD | <5% | Dominated by I/O and serialization |
+
+### Final Decision: Checked-Always (Swift Model)
+
+Based on research: **checked arithmetic by default** is viable for Indent's 5-10% acceptable overhead target. Key implementation notes:
+
+1. **Don't follow Rust's debug/release split**—Swift proves checked-by-default in release is production-viable
+2. **Consider frontend optimization**—Swift's SIL-level redundant check removal is highly effective
+3. **Document wrapping operators**—`+%`, `-%` for hot paths where overflow is provably impossible

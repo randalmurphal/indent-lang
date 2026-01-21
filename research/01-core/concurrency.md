@@ -127,3 +127,61 @@ Given your principles ("obvious over clever," "explicit over magic," "progressiv
 The theoretical ceiling for your language: **Go's syntax with Kotlin's structured guarantees and Rust's memory efficiency**. Loom's continuation-based virtual threads suggest this is implementable—Java achieved it within JVM constraints. A language designed from scratch can go further, encoding structured concurrency in the type system while maintaining the readability of synchronous code.
 
 The key insight from this research: structured concurrency isn't about restricting developers—it's about making the runtime's behavior match the code's visual structure. When a function returns, all work it spawned should be complete. This is the "obvious" behavior that Go's `go func()` violates and that your language should enforce by default.
+
+---
+
+## DECISION: Zig-Style Colorless Async via Io Interface
+
+**See also:** `research/01-core/colorless_async_design.md` for detailed implementation research.
+
+After extensive research, **Indent adopts a Zig-inspired Io interface approach** rather than pure stackful coroutines. This achieves colorless semantics with Rust-level memory efficiency.
+
+### Architecture Overview
+
+```
+Indent Source Code (no async keyword)
+              ↓
+    Compiler Call Graph Analysis
+              ↓
+    ┌─────────────────────────────────┐
+    │  Functions touching Io get      │
+    │  transformed to state machines  │
+    │  (stackless by default)         │
+    └─────────────────────────────────┘
+              ↓
+    Optional stackful coroutines for
+    FFI/complex cases via explicit context
+```
+
+### Recommended Syntax
+
+```python
+# Io context established at boundary
+def fetch_user(id: int) -> User:
+    return http.get(f"/users/{id}").json()  # Io implicitly available
+
+def main():
+    with async_io():  # Context block establishes Io
+        concurrent:   # Structured concurrency block
+            user = fetch_user(123)
+            orders = fetch_orders(123)
+
+        # Both complete here
+        print(f"{user.name} has {len(orders)} orders")
+```
+
+### Key Design Decisions
+
+| Factor | Zig-style Io | Go-style Stackful |
+|--------|--------------|-------------------|
+| Memory per task | Bytes (state machine) | KB (stack) |
+| WASM support | Native | Requires stack switching emulation |
+| FFI compatibility | Requires explicit handling | Seamless |
+| Maximum concurrency | Millions of tasks | Limited by stack memory |
+
+### Implementation Roadmap
+
+1. **Phase 1:** Implement blocking Io (baseline, zero async overhead)
+2. **Phase 2:** Add thread-pool Io (multiplexed blocking)
+3. **Phase 3:** Add compiler-driven stackless coroutines
+4. **Phase 4:** Optional stackful coroutines for FFI/recursive cases
